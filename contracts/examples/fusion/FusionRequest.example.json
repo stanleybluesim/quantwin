@@ -1,0 +1,9 @@
+{
+  "tenant_id": "t_demo",
+  "mode": "BALANCED",
+  "max_evidence": 5,
+  "evidence_list": [
+    { "evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8 },
+    { "evidence_id": "ev_002", "source": "internal.runbook", "snippet": "B", "score": 0.7 }
+  ]
+}

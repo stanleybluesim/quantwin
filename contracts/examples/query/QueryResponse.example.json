@@ -1,0 +1,26 @@
+{
+  "trace_id": "tr_0001",
+  "answer": "RecommendationCard 是面向用户的结构化建议摘要，可绑定风险等级、行动建议与证据引用。",
+  "evidence_list": [
+    {
+      "evidence_id": "ev_001",
+      "source": "internal.docs",
+      "title": "QuantWin Spec",
+      "snippet": "RecommendationCard 用于输出结构化建议与证据引用。",
+      "score": 0.87,
+      "published_at": "2026-01-18T08:00:00Z"
+    },
+    {
+      "evidence_id": "ev_002",
+      "source": "internal.runbook",
+      "snippet": "建议卡需要可审计字段与证据链。",
+      "score": 0.74
+    }
+  ],
+  "recommendation_card": {
+    "risk_level": "MEDIUM",
+    "summary": "建议输出结构化建议卡，并在卡内引用 evidence_id 以形成可追溯证据链。",
+    "actions": ["在 API 响应中返回 recommendation_card", "将证据编号写入 evidence_refs"],
+    "evidence_refs": ["ev_001", "ev_002"]
+  }
+}

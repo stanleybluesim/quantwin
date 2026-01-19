@@ -1,0 +1,9 @@
+{
+  "tenant_id": "t_demo",
+  "source_id": "s_web",
+  "received_at": "2026-01-19T10:00:00Z",
+  "content": {
+    "mime_type": "text/plain",
+    "text": "QuantWin ingest example content"
+  }
+}

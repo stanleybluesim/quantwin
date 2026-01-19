@@ -1,0 +1,9 @@
+{
+  "trace_id": "tr_0002",
+  "fused_summary": "综合证据后，建议以结构化方式输出结果并保留证据引用。",
+  "used_evidence_ids": ["ev_001", "ev_002"],
+  "results_by_source": {
+    "internal.docs": ["ev_001"],
+    "internal.runbook": ["ev_002"]
+  }
+}

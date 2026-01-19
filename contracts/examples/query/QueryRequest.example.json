@@ -1,0 +1,6 @@
+{
+  "tenant_id": "t_demo",
+  "query": "什么是 RecommendationCard？",
+  "top_k": 5,
+  "lang": "zh"
+}
