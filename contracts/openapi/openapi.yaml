@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: QuantWin Contracts
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: Proprietary
+servers:
+  - url: /
+
+tags:
+  - name: ingest
+    description: Ingest content into QuantWin
+  - name: query
+    description: Query and get answer with evidence
+  - name: fusion
+    description: Fuse evidence into a summary
+
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/ingest:
+    post:
+      tags: [ingest]
+      summary: Ingest content
+      operationId: ingestV1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/ingest/IngestRequest.v1.json
+      responses:
+        "200":
+          description: Ingest accepted
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/ingest/IngestAck.v1.json
+        "400":
+          $ref: "#/components/responses/Error400"
+        "401":
+          $ref: "#/components/responses/Error401"
+        "500":
+          $ref: "#/components/responses/Error500"
+
+  /v1/query:
+    post:
+      tags: [query]
+      summary: Query with evidence
+      operationId: queryV1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/query/QueryRequest.v1.json
+      responses:
+        "200":
+          description: Query response
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/query/QueryResponse.v1.json
+        "400":
+          $ref: "#/components/responses/Error400"
+        "401":
+          $ref: "#/components/responses/Error401"
+        "500":
+          $ref: "#/components/responses/Error500"
+
+  /v1/fuse:
+    post:
+      tags: [fusion]
+      summary: Fuse evidence
+      operationId: fuseV1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/fusion/FusionRequest.v1.json
+      responses:
+        "200":
+          description: Fusion result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/fusion/FusionResult.v1.json
+        "400":
+          $ref: "#/components/responses/Error400"
+        "401":
+          $ref: "#/components/responses/Error401"
+        "500":
+          $ref: "#/components/responses/Error500"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error400:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
+    Error401:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
+    Error500:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
