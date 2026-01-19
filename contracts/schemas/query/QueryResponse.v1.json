@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quantwin:schema:query:QueryResponse:v1",
+  "title": "QueryResponse.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["trace_id", "answer", "evidence_list"],
+  "properties": {
+    "trace_id": { "type": "string", "minLength": 1 },
+    "answer": { "type": "string", "minLength": 1 },
+    "evidence_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/EvidenceItem" }
+    },
+    "recommendation_card": { "$ref": "#/$defs/RecommendationCard" }
+  },
+  "$defs": {
+    "EvidenceItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "source", "snippet", "score"],
+      "properties": {
+        "evidence_id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "snippet": { "type": "string", "minLength": 1 },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "published_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "RecommendationCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_level", "summary"],
+      "properties": {
+        "risk_level": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "actions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        }
+      }
+    }
+  }
+}

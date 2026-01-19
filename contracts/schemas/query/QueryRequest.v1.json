@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quantwin:schema:query:QueryRequest:v1",
+  "title": "QueryRequest.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenant_id", "query"],
+  "properties": {
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "query": { "type": "string", "minLength": 1 },
+    "top_k": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+    "lang": { "type": "string", "enum": ["zh", "en"], "default": "zh" }
+  }
+}

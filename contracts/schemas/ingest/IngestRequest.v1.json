@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quantwin:schema:ingest:IngestRequest:v1",
+  "title": "IngestRequest.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenant_id", "source_id", "content", "received_at"],
+  "properties": {
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "source_id": { "type": "string", "minLength": 1 },
+    "received_at": { "type": "string", "format": "date-time" },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mime_type"],
+      "properties": {
+        "mime_type": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        { "required": ["text"] },
+        { "required": ["url"] }
+      ]
+    }
+  }
+}
