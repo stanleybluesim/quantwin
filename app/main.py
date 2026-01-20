@@ -132,9 +132,18 @@ class FusionResult(BaseModel):
     results_by_source: Dict[str, List[str]] = {}
 
 
-def _validate_response(schema_rel_path: str, payload: dict) -> dict:
-    validate_or_raise(schema_rel_path, payload)
-    return payload
+def _validate_response(schema_rel_path: str, payload: dict):
+    try:
+        validate_or_raise(schema_rel_path, payload)
+        return payload
+    except Exception as e:
+        return error_response(
+            None,
+            status_code=500,
+            code="CONTRACT_VIOLATION",
+            message="Response schema validation failed",
+            details={"schema": schema_rel_path, "error": str(e)},
+        )
 
 
 @app.post("/v1/ingest", response_model=IngestAck)

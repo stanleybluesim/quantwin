@@ -19,6 +19,33 @@ tags:
 security:
   - bearerAuth: []
 
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+
+  responses:
+    Error400:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
+    Error401:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
+    Error500:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/ErrorEnvelope.v1.json
+
 paths:
   /v1/ingest:
     post:
@@ -95,29 +122,3 @@ paths:
         "500":
           $ref: "#/components/responses/Error500"
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  responses:
-    Error400:
-      description: Bad Request
-      content:
-        application/json:
-          schema:
-            $ref: ../schemas/common/ErrorEnvelope.v1.json
-    Error401:
-      description: Unauthorized
-      content:
-        application/json:
-          schema:
-            $ref: ../schemas/common/ErrorEnvelope.v1.json
-    Error500:
-      description: Internal Server Error
-      content:
-        application/json:
-          schema:
-            $ref: ../schemas/common/ErrorEnvelope.v1.json
