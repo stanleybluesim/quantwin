@@ -69,3 +69,19 @@ def test_unauthorized_returns_error_envelope():
             p.wait(timeout=3)
         except Exception:
             p.kill()
+
+def test_bad_request_returns_error_envelope():
+    p = _start_server()
+    try:
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {TOKEN}"}
+        # 缺少必填字段，触发 RequestValidationError -> 400
+        r = httpx.post(f"{BASE}/v1/query", json={}, headers=headers, timeout=5.0)
+        assert r.status_code == 400
+        payload = r.json()
+        validate_or_raise("common/ErrorEnvelope.v1.json", payload)
+    finally:
+        p.terminate()
+        try:
+            p.wait(timeout=3)
+        except Exception:
+            p.kill()
