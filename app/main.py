@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict
+
+from app.schema_validator import validate_or_raise
 
 app = FastAPI(title="QuantWin API", version="0.1.0")
 
@@ -66,23 +68,35 @@ class FusionResult(BaseModel):
     used_evidence_ids: List[str]
     results_by_source: Dict[str, List[str]] = {}
 
+def _validate_response(schema_rel_path: str, payload: dict) -> dict:
+    try:
+        validate_or_raise(schema_rel_path, payload)
+        return payload
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/v1/ingest", response_model=IngestAck)
 def ingest(req: IngestRequest):
-    return IngestAck(trace_id="tr_ingest_001", doc_id="doc_001", status="ACCEPTED")
+    payload = {"trace_id": "tr_ingest_001", "doc_id": "doc_001", "status": "ACCEPTED"}
+    return _validate_response("ingest/IngestAck.v1.json", payload)
 
 @app.post("/v1/query", response_model=QueryResponse)
 def query(req: QueryRequest):
-    ev = [
-        EvidenceItem(evidence_id="ev_001", source="internal.docs", snippet="A", score=0.8),
-        EvidenceItem(evidence_id="ev_002", source="internal.runbook", snippet="B", score=0.7),
-    ]
-    card = RecommendationCard(
-        risk_level="MEDIUM",
-        summary="Mock recommendation.",
-        actions=["action_1"],
-        evidence_refs=["ev_001", "ev_002"],
-    )
-    return QueryResponse(trace_id="tr_query_001", answer="Mock answer.", evidence_list=ev, recommendation_card=card)
+    payload = {
+        "trace_id": "tr_query_001",
+        "answer": "Mock answer.",
+        "evidence_list": [
+            {"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8},
+            {"evidence_id": "ev_002", "source": "internal.runbook", "snippet": "B", "score": 0.7}
+        ],
+        "recommendation_card": {
+            "risk_level": "MEDIUM",
+            "summary": "Mock recommendation.",
+            "actions": ["action_1"],
+            "evidence_refs": ["ev_001", "ev_002"]
+        }
+    }
+    return _validate_response("query/QueryResponse.v1.json", payload)
 
 @app.post("/v1/fuse", response_model=FusionResult)
 def fuse(req: FusionRequest):
@@ -90,9 +104,11 @@ def fuse(req: FusionRequest):
     by_source: Dict[str, List[str]] = {}
     for e in req.evidence_list:
         by_source.setdefault(e.source, []).append(e.evidence_id)
-    return FusionResult(
-        trace_id="tr_fuse_001",
-        fused_summary="Mock fused summary.",
-        used_evidence_ids=used,
-        results_by_source=by_source,
-    )
+
+    payload = {
+        "trace_id": "tr_fuse_001",
+        "fused_summary": "Mock fused summary.",
+        "used_evidence_ids": used,
+        "results_by_source": by_source
+    }
+    return _validate_response("fusion/FusionResult.v1.json", payload)
