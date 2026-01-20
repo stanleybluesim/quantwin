@@ -6,3 +6,4 @@ __pycache__/
 
 # local backups
 *.bak.*
+# hook test
