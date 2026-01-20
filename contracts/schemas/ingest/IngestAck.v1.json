@@ -4,13 +4,27 @@
   "title": "IngestAck.v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["trace_id", "doc_id", "status"],
+  "required": [
+    "trace_id",
+    "doc_id",
+    "status"
+  ],
   "properties": {
-    "trace_id": { "type": "string", "minLength": 1 },
-    "doc_id": { "type": "string", "minLength": 1 },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "status": {
       "type": "string",
-      "enum": ["ACCEPTED", "DUPLICATE", "REJECTED"]
+      "enum": [
+        "ACCEPTED",
+        "DUPLICATE",
+        "REJECTED"
+      ]
     }
   }
 }

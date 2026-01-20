@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List, Protocol, Dict, Any
+from typing import Optional, List, Protocol, Dict
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,9 @@ class Evidence:
 
 
 class DocStore(Protocol):
+    def find_by_idempotency(self, tenant_id: str, source_id: str, content_hash: str) -> Optional[str]:
+        ...
+
     def upsert(self, doc: Document) -> str:
         ...
 
