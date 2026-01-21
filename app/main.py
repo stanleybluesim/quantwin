@@ -8,19 +8,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import Body, FastAPI, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, RefResolver
 
 from app.store.base import Document, DocStore
 from app.store.memory import InMemoryDocStore
 
-
 app = FastAPI(title="QuantWin Mock API", version="0.1.0")
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "contracts" / "schemas"
-
 
 _SCHEMA_STORE: Optional[Dict[str, Any]] = None
 
@@ -47,9 +44,9 @@ def validate_or_raise(rel: str, instance: Any) -> None:
     global _SCHEMA_STORE
     if _SCHEMA_STORE is None:
         _SCHEMA_STORE = _build_schema_store()
-    schema = _load_schema(rel)
-    base = (SCHEMAS / rel).resolve()
-    resolver = RefResolver(base_uri=f"file://{base}", referrer=schema, store=_SCHEMA_STORE)
+    schema_path = (SCHEMAS / rel).resolve()
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    resolver = RefResolver(base_uri=f"file://{schema_path}", referrer=schema, store=_SCHEMA_STORE)
     Draft202012Validator(schema, resolver=resolver).validate(instance)
 
 
@@ -65,77 +62,55 @@ def _authorized(request: Request) -> bool:
     return auth == f"Bearer {token}"
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _as_str(v, default: str = "") -> str:
+def _as_str(v: Any, default: str = "") -> str:
+    if v is None:
+        return default
     if isinstance(v, str):
-        vv = v.strip()
-        return vv if vv else default
-    return default
+        return v
+    return str(v)
 
 
-def _as_int(v, default: int = 0) -> int:
+def _as_int(v: Any, default: int = 0) -> int:
     try:
         return int(v)
     except Exception:
         return default
-def _get_store() -> DocStore:
-    kind = (os.getenv("QW_STORE") or "memory").strip().lower()
-    if kind == "memory":
-        persist = os.getenv("QW_STORE_PATH")  # 可选：比如 ./var/store.json
-        return InMemoryDocStore(persist_path=persist)
-    return InMemoryDocStore()
-
-
-STORE: DocStore = _get_store()
 
 
 def _make_valid(schema_rel: str, preferred: Dict[str, Any]) -> Dict[str, Any]:
-    candidates = [preferred]
+    # 简化：只要 preferred 通过 schema 就返回，否则尽量组一个最小合法对象
+    try:
+        validate_or_raise(schema_rel, preferred)
+        return preferred
+    except Exception:
+        pass
 
     if schema_rel.endswith("ingest/IngestAck.v1.json"):
-        candidates.append(
-            {
-                "trace_id": preferred.get("trace_id", _new_trace("tr_ingest")),
-                "doc_id": preferred.get("doc_id", "doc_001"),
-                "status": preferred.get("status", "ACCEPTED"),
-            }
-        )
+        obj = {"trace_id": preferred.get("trace_id", _new_trace("tr_ingest")), "doc_id": preferred.get("doc_id", "doc_001"), "status": preferred.get("status", "ACCEPTED")}
+        validate_or_raise(schema_rel, obj)
+        return obj
 
     if schema_rel.endswith("query/QueryResponse.v1.json"):
-        candidates.append(
-            {
-                "trace_id": preferred.get("trace_id", _new_trace("tr_query")),
-                "answer": preferred.get("answer", "Mock answer."),
-                "evidence_list": preferred.get(
-                    "evidence_list",
-                    [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8}],
-                ),
-                "recommendation_card": preferred.get(
-                    "recommendation_card",
-                    {"risk_level": "MEDIUM", "summary": "Mock recommendation.", "actions": ["action_1"], "evidence_refs": ["ev_001"]},
-                ),
-            }
-        )
+        ev = preferred.get("evidence_list") or [{"evidence_id": "ev_000", "source": "internal.mock", "snippet": "No evidence available.", "score": 0.0}]
+        obj = {
+            "trace_id": preferred.get("trace_id", _new_trace("tr_query")),
+            "answer": preferred.get("answer", "Mock answer."),
+            "evidence_list": ev,
+            "recommendation_card": preferred.get("recommendation_card", {"risk_level": "MEDIUM", "summary": "Mock recommendation.", "actions": ["action_1"], "evidence_refs": [ev[0]["evidence_id"]]}),
+        }
+        validate_or_raise(schema_rel, obj)
+        return obj
 
     if schema_rel.endswith("fusion/FusionResult.v1.json"):
-        candidates.append(
-            {
-                "trace_id": preferred.get("trace_id", _new_trace("tr_fuse")),
-                "fused_summary": preferred.get("fused_summary", "Mock fused summary."),
-                "used_evidence_ids": preferred.get("used_evidence_ids", ["ev_001"]),
-                "results_by_source": preferred.get("results_by_source", {"internal.docs": ["ev_001"]}),
-            }
-        )
+        obj = {
+            "trace_id": preferred.get("trace_id", _new_trace("tr_fuse")),
+            "fused_summary": preferred.get("fused_summary", "Mock fused summary."),
+            "used_evidence_ids": preferred.get("used_evidence_ids", ["ev_000"]),
+            "results_by_source": preferred.get("results_by_source", {"internal.mock": ["ev_000"]}),
+        }
+        validate_or_raise(schema_rel, obj)
+        return obj
 
-    for c in candidates:
-        try:
-            validate_or_raise(schema_rel, c)
-            return c
-        except Exception:
-            continue
     return preferred
 
 
@@ -146,18 +121,20 @@ def _error_envelope(status_code: int, code: str, message: str, trace_id: str, de
     return JSONResponse(status_code=status_code, content=payload)
 
 
-@app.exception_handler(RequestValidationError)
-async def _request_validation_handler(request: Request, exc: RequestValidationError):
-    trace_id = _new_trace("tr_400")
-    return _error_envelope(400, "BAD_REQUEST", "request validation failed", trace_id, {"reason": str(exc)})
-
-
 @app.exception_handler(Exception)
 async def _unhandled_exc_handler(request: Request, exc: Exception):
-    trace_id = _new_trace("tr_500")
+    trace_id = _new_trace("tr_err")
     return _error_envelope(500, "INTERNAL_ERROR", str(exc), trace_id)
 
 
+def _init_store() -> DocStore:
+    kind = (os.getenv("QW_STORE", "memory") or "memory").strip().lower()
+    if kind == "memory":
+        return InMemoryDocStore(persist_path=os.getenv("QW_STORE_PATH"))
+    raise RuntimeError(f"unsupported QW_STORE={kind}")
+
+
+STORE: DocStore = _init_store()
 _seen_ingest: set[str] = set()
 
 
@@ -169,7 +146,6 @@ def healthz():
 @app.post("/v1/ingest")
 async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_ingest")
-
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -180,29 +156,27 @@ async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
 
     tenant_id = _as_str(payload.get("tenant_id"), "t_default")
     source_id = _as_str(payload.get("source_id"), "s_default")
-
-    # content/text 可能不是 string。只接受 string，其它类型一律当成空。
-    text = payload.get("text")
-    if text is None:
-        text = payload.get("content")
-    text = _as_str(text, "")
-
-    url = payload.get("url")
-    url = _as_str(url, "") or None
-
     mime_type = _as_str(payload.get("mime_type"), "text/plain")
-    received_at = _as_str(payload.get("received_at"), _now_iso())
+    received_at = datetime.now(timezone.utc).isoformat()
 
-    raw_for_hash = text or (url or json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    content_hash = hashlib.sha256(raw_for_hash.encode("utf-8")).hexdigest()
+    # 稳定 idempotency：对 payload 做 canonical hash
+    canon = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    content_hash = _as_str(payload.get("content_hash"), "") or hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
-    existing = STORE.find_by_idempotency(tenant_id, source_id, content_hash)
+    existing = STORE.find_by_idempotency(tenant_id=tenant_id, source_id=source_id, content_hash=content_hash)
+    status = "ACCEPTED"
     if existing:
-        status = "DUPLICATE"
         doc_id = existing
+        status = "DUPLICATE"
     else:
-        status = "ACCEPTED"
         doc_id = _as_str(payload.get("doc_id"), "") or _as_str(payload.get("document_id"), "") or f"doc_{os.urandom(4).hex()}"
+        text = payload.get("text")
+        if text is None:
+            text = payload.get("content")
+        text = _as_str(text, "")
+        url = payload.get("url")
+        url = _as_str(url, "") or None
+
         doc = Document(
             doc_id=doc_id,
             tenant_id=tenant_id,
@@ -215,8 +189,8 @@ async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
         )
         STORE.upsert(doc)
 
-    # 额外的“进程内重复”判定，不影响跨重启的持久化判定
-    key = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    # 进程内重复兜底
+    key = hashlib.sha256(canon.encode("utf-8")).hexdigest()
     if key in _seen_ingest:
         status = "DUPLICATE"
     _seen_ingest.add(key)
@@ -228,7 +202,6 @@ async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
 @app.post("/v1/query")
 async def query(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_query")
-
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -238,26 +211,26 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
         return _error_envelope(400, "BAD_REQUEST", "request schema validation failed", trace_id, {"reason": str(e)})
 
     tenant_id = _as_str(payload.get("tenant_id"), "t_default")
-
     q = payload.get("query")
     if q is None:
         q = payload.get("q")
     q = _as_str(q, "")
-
     top_k = _as_int(payload.get("top_k"), 5)
     if top_k <= 0:
         top_k = 5
 
     hits = STORE.search(tenant_id=tenant_id, query=q, top_k=top_k)
+
+    # 响应 evidence item 严格对齐 schema：不带 doc_id
     evidence_list = [
         {"evidence_id": e.evidence_id, "source": e.source, "snippet": e.snippet, "score": float(e.score)}
         for e in hits
     ]
-    evidence_refs = [e["evidence_id"] for e in evidence_list]
-    # FALLBACK_EVIDENCE: schema requires evidence_list minItems=1
     if not evidence_list:
-        evidence_list = [{"evidence_id":"ev_001","source":"internal.docs","snippet":"A","score":0.8}]
-        evidence_refs = ["ev_001"]
+        evidence_list = [{"evidence_id": "ev_000", "source": "internal.mock", "snippet": "No evidence available.", "score": 0.0}]
+
+    evidence_refs = [x["evidence_id"] for x in evidence_list]
+
     preferred = {
         "trace_id": trace_id,
         "answer": "Mock answer.",
@@ -276,7 +249,6 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
 @app.post("/v1/fuse")
 async def fuse(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_fuse")
-
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -288,8 +260,8 @@ async def fuse(request: Request, payload: Dict[str, Any] = Body(...)):
     preferred = {
         "trace_id": trace_id,
         "fused_summary": "Mock fused summary.",
-        "used_evidence_ids": ["ev_001"],
-        "results_by_source": {"internal.docs": ["ev_001"]},
+        "used_evidence_ids": ["ev_000"],
+        "results_by_source": {"internal.mock": ["ev_000"]},
     }
     resp = _make_valid("fusion/FusionResult.v1.json", preferred)
     return JSONResponse(status_code=200, content=resp)
