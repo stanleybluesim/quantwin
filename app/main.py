@@ -5,9 +5,10 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 from fastapi import Body, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, RefResolver
 
@@ -19,6 +20,7 @@ app = FastAPI(title="QuantWin Mock API", version="0.1.0")
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "contracts" / "schemas"
+
 
 _SCHEMA_STORE: Optional[Dict[str, Any]] = None
 
@@ -65,6 +67,29 @@ def _authorized(request: Request) -> bool:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _as_str(v, default: str = "") -> str:
+    if isinstance(v, str):
+        vv = v.strip()
+        return vv if vv else default
+    return default
+
+
+def _as_int(v, default: int = 0) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return default
+def _get_store() -> DocStore:
+    kind = (os.getenv("QW_STORE") or "memory").strip().lower()
+    if kind == "memory":
+        persist = os.getenv("QW_STORE_PATH")  # 可选：比如 ./var/store.json
+        return InMemoryDocStore(persist_path=persist)
+    return InMemoryDocStore()
+
+
+STORE: DocStore = _get_store()
 
 
 def _make_valid(schema_rel: str, preferred: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,34 +146,19 @@ def _error_envelope(status_code: int, code: str, message: str, trace_id: str, de
     return JSONResponse(status_code=status_code, content=payload)
 
 
+@app.exception_handler(RequestValidationError)
+async def _request_validation_handler(request: Request, exc: RequestValidationError):
+    trace_id = _new_trace("tr_400")
+    return _error_envelope(400, "BAD_REQUEST", "request validation failed", trace_id, {"reason": str(exc)})
+
+
 @app.exception_handler(Exception)
 async def _unhandled_exc_handler(request: Request, exc: Exception):
-    trace_id = _new_trace("tr_err")
+    trace_id = _new_trace("tr_500")
     return _error_envelope(500, "INTERNAL_ERROR", str(exc), trace_id)
 
 
-def _canonical_hash(payload: Dict[str, Any]) -> str:
-    b = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(b).hexdigest()
-
-
-def _get_tenant_id(payload: Dict[str, Any], request: Request) -> str:
-    return str(payload.get("tenant_id") or request.headers.get("X-Tenant-Id") or "tenant_default")
-
-
-def _get_source_id(payload: Dict[str, Any], request: Request) -> str:
-    return str(payload.get("source_id") or request.headers.get("X-Source-Id") or "source_default")
-
-
-def _get_store() -> DocStore:
-    store_kind = os.getenv("QW_STORE", "memory").strip().lower()
-    if store_kind == "memory":
-        persist_path = os.getenv("QW_STORE_PATH") or None
-        return InMemoryDocStore(persist_path=persist_path)
-    return InMemoryDocStore(persist_path=None)
-
-
-STORE: DocStore = _get_store()
+_seen_ingest: set[str] = set()
 
 
 @app.get("/healthz")
@@ -159,6 +169,7 @@ def healthz():
 @app.post("/v1/ingest")
 async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_ingest")
+
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -167,42 +178,57 @@ async def ingest(request: Request, payload: Dict[str, Any] = Body(...)):
     except Exception as e:
         return _error_envelope(400, "BAD_REQUEST", "request schema validation failed", trace_id, {"reason": str(e)})
 
-    tenant_id = _get_tenant_id(payload, request)
-    source_id = _get_source_id(payload, request)
+    tenant_id = _as_str(payload.get("tenant_id"), "t_default")
+    source_id = _as_str(payload.get("source_id"), "s_default")
 
-    content_hash = payload.get("content_hash")
-    if not isinstance(content_hash, str) or not content_hash:
-        content_hash = _canonical_hash(payload)
+    # content/text 可能不是 string。只接受 string，其它类型一律当成空。
+    text = payload.get("text")
+    if text is None:
+        text = payload.get("content")
+    text = _as_str(text, "")
+
+    url = payload.get("url")
+    url = _as_str(url, "") or None
+
+    mime_type = _as_str(payload.get("mime_type"), "text/plain")
+    received_at = _as_str(payload.get("received_at"), _now_iso())
+
+    raw_for_hash = text or (url or json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    content_hash = hashlib.sha256(raw_for_hash.encode("utf-8")).hexdigest()
 
     existing = STORE.find_by_idempotency(tenant_id, source_id, content_hash)
     if existing:
-        resp = _make_valid("ingest/IngestAck.v1.json", {"trace_id": trace_id, "doc_id": existing, "status": "DUPLICATE"})
-        return JSONResponse(status_code=200, content=resp)
+        status = "DUPLICATE"
+        doc_id = existing
+    else:
+        status = "ACCEPTED"
+        doc_id = _as_str(payload.get("doc_id"), "") or _as_str(payload.get("document_id"), "") or f"doc_{os.urandom(4).hex()}"
+        doc = Document(
+            doc_id=doc_id,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            received_at=received_at,
+            mime_type=mime_type,
+            text=text or None,
+            url=url,
+            content_hash=content_hash,
+        )
+        STORE.upsert(doc)
 
-    doc_id = payload.get("doc_id") or payload.get("document_id") or f"doc_{content_hash[:12]}"
-    text = payload.get("text") or payload.get("content") or payload.get("raw_text") or ""
-    mime_type = payload.get("mime_type") or "text/plain"
-    url = payload.get("url")
+    # 额外的“进程内重复”判定，不影响跨重启的持久化判定
+    key = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    if key in _seen_ingest:
+        status = "DUPLICATE"
+    _seen_ingest.add(key)
 
-    doc = Document(
-        doc_id=str(doc_id),
-        tenant_id=str(tenant_id),
-        source_id=str(source_id),
-        received_at=_now_iso(),
-        mime_type=str(mime_type),
-        text=str(text) if text is not None else None,
-        url=str(url) if url is not None else None,
-        content_hash=str(content_hash),
-    )
-    STORE.upsert(doc)
-
-    resp = _make_valid("ingest/IngestAck.v1.json", {"trace_id": trace_id, "doc_id": doc.doc_id, "status": "ACCEPTED"})
+    resp = _make_valid("ingest/IngestAck.v1.json", {"trace_id": trace_id, "doc_id": doc_id, "status": status})
     return JSONResponse(status_code=200, content=resp)
 
 
 @app.post("/v1/query")
 async def query(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_query")
+
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -211,30 +237,36 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
     except Exception as e:
         return _error_envelope(400, "BAD_REQUEST", "request schema validation failed", trace_id, {"reason": str(e)})
 
-    tenant_id = _get_tenant_id(payload, request)
-    q = payload.get("query") or payload.get("question") or payload.get("q") or ""
-    top_k = payload.get("top_k") or payload.get("k") or 5
-    try:
-        top_k_int = int(top_k)
-    except Exception:
-        top_k_int = 5
+    tenant_id = _as_str(payload.get("tenant_id"), "t_default")
 
-    evs = STORE.search(str(tenant_id), str(q), max(1, top_k_int))
-    evidence_list: List[Dict[str, Any]] = [
-        {"evidence_id": e.evidence_id, "source": e.source, "snippet": e.snippet, "score": e.score}
-        for e in evs
+    q = payload.get("query")
+    if q is None:
+        q = payload.get("q")
+    q = _as_str(q, "")
+
+    top_k = _as_int(payload.get("top_k"), 5)
+    if top_k <= 0:
+        top_k = 5
+
+    hits = STORE.search(tenant_id=tenant_id, query=q, top_k=top_k)
+    evidence_list = [
+        {"evidence_id": e.evidence_id, "source": e.source, "snippet": e.snippet, "score": float(e.score)}
+        for e in hits
     ]
-    ev_refs = [e["evidence_id"] for e in evidence_list]
-
+    evidence_refs = [e["evidence_id"] for e in evidence_list]
+    # FALLBACK_EVIDENCE: schema requires evidence_list minItems=1
+    if not evidence_list:
+        evidence_list = [{"evidence_id":"ev_001","source":"internal.docs","snippet":"A","score":0.8}]
+        evidence_refs = ["ev_001"]
     preferred = {
         "trace_id": trace_id,
         "answer": "Mock answer.",
-        "evidence_list": evidence_list if evidence_list else [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8}],
+        "evidence_list": evidence_list,
         "recommendation_card": {
             "risk_level": "MEDIUM",
             "summary": "Mock recommendation.",
             "actions": ["action_1"],
-            "evidence_refs": ev_refs if ev_refs else ["ev_001"],
+            "evidence_refs": evidence_refs,
         },
     }
     resp = _make_valid("query/QueryResponse.v1.json", preferred)
@@ -244,6 +276,7 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
 @app.post("/v1/fuse")
 async def fuse(request: Request, payload: Dict[str, Any] = Body(...)):
     trace_id = _new_trace("tr_fuse")
+
     if not _authorized(request):
         return _error_envelope(401, "UNAUTHORIZED", "missing or invalid bearer token", trace_id)
 
@@ -255,8 +288,8 @@ async def fuse(request: Request, payload: Dict[str, Any] = Body(...)):
     preferred = {
         "trace_id": trace_id,
         "fused_summary": "Mock fused summary.",
-        "used_evidence_ids": payload.get("used_evidence_ids") or ["ev_001"],
-        "results_by_source": payload.get("results_by_source") or {"internal.docs": ["ev_001"]},
+        "used_evidence_ids": ["ev_001"],
+        "results_by_source": {"internal.docs": ["ev_001"]},
     }
     resp = _make_valid("fusion/FusionResult.v1.json", preferred)
     return JSONResponse(status_code=200, content=resp)
