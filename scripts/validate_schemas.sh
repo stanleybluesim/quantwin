@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-python -m pip install -q check-jsonschema==0.33.0
-
+# lazy-install check-jsonschema only if missing
+python - <<'PY2' >/dev/null 2>&1 || python -m pip install -q check-jsonschema==0.33.0
+import importlib
+importlib.import_module("check_jsonschema")
+PY2
 check-jsonschema --schemafile contracts/schemas/ingest/IngestRequest.v1.json contracts/examples/ingest/IngestRequest.example.json
 
 check-jsonschema --schemafile contracts/schemas/query/QueryRequest.v1.json contracts/examples/query/QueryRequest.example.json
