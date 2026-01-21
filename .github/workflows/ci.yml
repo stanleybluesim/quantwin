@@ -33,3 +33,5 @@ jobs:
           test -f requirements.txt
           python -m pip install -r requirements.txt
           pytest -q
+        env:
+          PYTHONPATH: .
