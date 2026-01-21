@@ -2,6 +2,13 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+if [ "${CONFIRM_OVERWRITE:-}" != "YES" ]; then
+  echo "ABORT: this script overwrites app/*.py"
+  echo "To proceed: CONFIRM_OVERWRITE=YES bash scripts/week4_day3_apply.sh"
+  exit 1
+fi
+
+
 python - <<'PY'
 from pathlib import Path
 from datetime import datetime
