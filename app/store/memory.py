@@ -61,4 +61,34 @@ class InMemoryDocStore:
         return self._docs.get(doc_id)
 
     def search(self, tenant_id: str, query: str, top_k: int) -> List[Evidence]:
-        return []
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        terms = [t for t in q.replace("\n", " ").split(" ") if t]
+        scored: List[tuple[float, Evidence]] = []
+
+        for doc in self._docs.values():
+            if doc.tenant_id != tenant_id:
+                continue
+            text = (doc.text or "").lower()
+            if not text:
+                continue
+            hits = 0
+            for t in terms:
+                if t and t in text:
+                    hits += text.count(t)
+            if hits <= 0:
+                continue
+            score = min(1.0, hits / 10.0)
+            snippet = (doc.text or "")[:200]
+            ev = Evidence(
+                evidence_id=f"ev_{doc.doc_id}",
+                source=doc.source_id,
+                snippet=snippet,
+                score=score,
+                doc_id=doc.doc_id,
+            )
+            scored.append((score, ev))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [ev for _, ev in scored[: max(1, int(top_k))]]

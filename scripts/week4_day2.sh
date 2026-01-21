@@ -1,4 +1,124 @@
-from __future__ import annotations
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+python - <<'PY'
+from pathlib import Path
+from datetime import datetime
+
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def backup(path: str):
+    p = Path(path)
+    if p.exists():
+        bak = p.with_suffix(p.suffix + f".bak.{ts}")
+        bak.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+        print("BACKUP:", bak)
+
+backup("app/store/memory.py")
+backup("app/main.py")
+
+Path("app/store/memory.py").write_text(
+"""from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict
+from pathlib import Path
+from typing import Optional, List, Dict, Tuple
+
+from app.store.base import Document, Evidence
+
+
+class InMemoryDocStore:
+    def __init__(self, persist_path: Optional[str] = None) -> None:
+        self._docs: Dict[str, Document] = {}
+        self._idem: Dict[Tuple[str, str, str], str] = {}  # (tenant_id, source_id, content_hash) -> doc_id
+        self._persist_path = Path(persist_path).expanduser() if persist_path else None
+        if self._persist_path:
+            self._load()
+
+    def _load(self) -> None:
+        try:
+            if not self._persist_path or not self._persist_path.exists():
+                return
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            docs = data.get("docs", {})
+            self._docs.clear()
+            for doc_id, d in docs.items():
+                self._docs[doc_id] = Document(**d)
+            self._idem.clear()
+            for doc_id, doc in self._docs.items():
+                if doc.content_hash:
+                    self._idem[(doc.tenant_id, doc.source_id, doc.content_hash)] = doc_id
+        except Exception:
+            self._docs = {}
+            self._idem = {}
+
+    def _save(self) -> None:
+        if not self._persist_path:
+            return
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._persist_path.with_suffix(self._persist_path.suffix + ".tmp")
+        payload = {"docs": {doc_id: asdict(doc) for doc_id, doc in self._docs.items()}}
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+            encoding="utf-8",
+        )
+        os.replace(tmp, self._persist_path)
+
+    def find_by_idempotency(self, tenant_id: str, source_id: str, content_hash: str) -> Optional[str]:
+        return self._idem.get((tenant_id, source_id, content_hash))
+
+    def upsert(self, doc: Document) -> str:
+        doc_id = doc.doc_id
+        self._docs[doc_id] = doc
+        if doc.content_hash:
+            self._idem[(doc.tenant_id, doc.source_id, doc.content_hash)] = doc_id
+        self._save()
+        return doc_id
+
+    def get(self, doc_id: str) -> Optional[Document]:
+        return self._docs.get(doc_id)
+
+    def search(self, tenant_id: str, query: str, top_k: int) -> List[Evidence]:
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        terms = [t for t in q.replace("\\n", " ").split(" ") if t]
+        scored: List[tuple[float, Evidence]] = []
+
+        for doc in self._docs.values():
+            if doc.tenant_id != tenant_id:
+                continue
+            text = (doc.text or "").lower()
+            if not text:
+                continue
+            hits = 0
+            for t in terms:
+                if t and t in text:
+                    hits += text.count(t)
+            if hits <= 0:
+                continue
+            score = min(1.0, hits / 10.0)
+            snippet = (doc.text or "")[:200]
+            ev = Evidence(
+                evidence_id=f"ev_{doc.doc_id}",
+                source=doc.source_id,
+                snippet=snippet,
+                score=score,
+                doc_id=doc.doc_id,
+            )
+            scored.append((score, ev))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [ev for _, ev in scored[: max(1, int(top_k))]]
+""",
+    encoding="utf-8",
+)
+
+Path("app/main.py").write_text(
+"""from __future__ import annotations
 
 import hashlib
 import json
@@ -86,7 +206,7 @@ def _make_valid(schema_rel: str, preferred: Dict[str, Any]) -> Dict[str, Any]:
                 "answer": preferred.get("answer", "Mock answer."),
                 "evidence_list": preferred.get(
                     "evidence_list",
-                    [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8}],
+                    [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8, "doc_id": "doc_001"}],
                 ),
                 "recommendation_card": preferred.get(
                     "recommendation_card",
@@ -221,7 +341,7 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
 
     evs = STORE.search(str(tenant_id), str(q), max(1, top_k_int))
     evidence_list: List[Dict[str, Any]] = [
-        {"evidence_id": e.evidence_id, "source": e.source, "snippet": e.snippet, "score": e.score}
+        {"evidence_id": e.evidence_id, "source": e.source, "snippet": e.snippet, "score": e.score, "doc_id": e.doc_id}
         for e in evs
     ]
     ev_refs = [e["evidence_id"] for e in evidence_list]
@@ -229,7 +349,7 @@ async def query(request: Request, payload: Dict[str, Any] = Body(...)):
     preferred = {
         "trace_id": trace_id,
         "answer": "Mock answer.",
-        "evidence_list": evidence_list if evidence_list else [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8}],
+        "evidence_list": evidence_list if evidence_list else [{"evidence_id": "ev_001", "source": "internal.docs", "snippet": "A", "score": 0.8, "doc_id": "doc_001"}],
         "recommendation_card": {
             "risk_level": "MEDIUM",
             "summary": "Mock recommendation.",
@@ -260,3 +380,21 @@ async def fuse(request: Request, payload: Dict[str, Any] = Body(...)):
     }
     resp = _make_valid("fusion/FusionResult.v1.json", preferred)
     return JSONResponse(status_code=200, content=resp)
+""",
+    encoding="utf-8",
+)
+
+print("OK: wrote app/store/memory.py and app/main.py")
+PY
+
+python -m py_compile app/main.py app/store/memory.py
+
+if [ -x scripts/preflight.sh ]; then
+  ./scripts/preflight.sh
+else
+  bash scripts/validate_openapi.sh
+  bash scripts/validate_schemas.sh
+  python -m pytest -q
+fi
+
+echo "OK: week4_day2 complete"
