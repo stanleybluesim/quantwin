@@ -8,6 +8,21 @@ if [ "${CONFIRM_OVERWRITE:-}" != "YES" ]; then
   exit 1
 fi
 
+BR="$(git branch --show-current)"
+if [ "${BR}" = "main" ]; then
+  echo "ABORT: do not run this on main"
+  echo "Create a feature branch first, e.g.: git checkout -b feat/day3-try"
+  exit 1
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "ABORT: working tree not clean"
+  echo "Commit/stash first, then rerun."
+  git status -sb
+  exit 1
+fi
+
+
 
 python - <<'PY'
 from pathlib import Path
