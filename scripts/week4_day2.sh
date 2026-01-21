@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# WEEK4_DAY2_IDEMPOTENT_GUARD
+# This script overwrites files. Use only on a clean branch.
+
 cd "$(git rev-parse --show-toplevel)"
 
 python - <<'PY'
