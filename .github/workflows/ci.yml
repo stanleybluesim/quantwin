@@ -40,3 +40,5 @@ jobs:
           pytest -q
         env:
           PYTHONPATH: .
+      - name: Run strict pytest (no xfail)
+        run: bash scripts/pytest_strict.sh
