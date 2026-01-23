@@ -20,9 +20,16 @@ except Exception:
 
 
 def _auth_headers() -> Dict[str, str]:
+    # In CI/local preflight we set QW_TEST_MODE=1 and a stable dev token.
+    # Keep local runs deterministic if user forgets to export it.
+    if os.getenv("QW_TEST_MODE", "").strip() == "1":
+        tok = os.getenv("QW_TEST_BEARER_TOKEN", "").strip() or "test-token"
+        return {"Authorization": f"Bearer {tok}"}
+
     tok = os.getenv("QW_TEST_BEARER_TOKEN", "").strip()
     if not tok:
         return {}
+
     return {"Authorization": f"Bearer {tok}"}
 
 

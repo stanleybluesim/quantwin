@@ -7,6 +7,9 @@ on:
 jobs:
   contract-check:
     runs-on: ubuntu-latest
+    env:
+      QW_TEST_MODE: "1"
+      QW_TEST_BEARER_TOKEN: "test-token"
     steps:
       - uses: actions/checkout@v4
       - name: Validate docs
