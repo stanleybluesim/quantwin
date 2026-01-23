@@ -16,39 +16,6 @@ from app.store.memory import InMemoryDocStore
 
 app = FastAPI(title="QuantWin Mock API", version="0.1.0")
 
-
-# QW_TEST_AUTH_MIDDLEWARE
-# Test-only auth helper:
-# - enabled when QW_TEST_MODE=1
-# - injects Authorization: Bearer <token> if missing
-# - also sets common env keys so token verifiers (if any) can match in test runs
-import os
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-
-
-class _QWTestAuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if os.getenv("QW_TEST_MODE", "").strip() == "1":
-            headers = list(request.scope.get("headers") or [])
-            has_auth = any(k.lower() == b"authorization" for k, _ in headers)
-            if not has_auth:
-                tok = os.getenv("QW_TEST_BEARER_TOKEN", "").strip() or "test-token"
-                # help downstream verifiers that compare against env token values
-                os.environ.setdefault("QW_BEARER_TOKEN", tok)
-                os.environ.setdefault("BEARER_TOKEN", tok)
-                os.environ.setdefault("API_BEARER_TOKEN", tok)
-                headers.append((b"authorization", f"Bearer {tok}".encode("utf-8")))
-                request.scope["headers"] = headers
-        return await call_next(request)
-
-
-try:
-    app.add_middleware(_QWTestAuthMiddleware)
-except Exception:
-    # if app isn't in module scope for some reason, fail loudly later in tests
-    pass
-
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "contracts" / "schemas"
 

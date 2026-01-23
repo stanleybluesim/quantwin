@@ -1,150 +1,110 @@
 import json
 import os
+import re
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import pytest
-from fastapi.testclient import TestClient
 
-# Robust app import (repo variations)
-app = None
-try:
-    from app.main import app as _app  # type: ignore
-    app = _app
-except Exception:
-    try:
-        from app import app as _app  # type: ignore
-        app = _app
-    except Exception as e:
-        raise RuntimeError("Cannot import FastAPI app. Expected app.main:app or app:app") from e
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+INGEST_EX = ROOT / "contracts" / "examples" / "ingest" / "IngestRequest.example.json"
+QUERY_EX  = ROOT / "contracts" / "examples" / "query"  / "QueryRequest.example.json"
+
+# Base candidate keys (keep)
+TOKEN_ENV_KEYS: List[str] = [
+    "QW_TEST_BEARER_TOKEN",
+    "BEARER_TOKEN",
+    "API_BEARER_TOKEN",
+    "AUTH_BEARER_TOKEN",
+    "QW_BEARER_TOKEN",
+]
+
+def _read_base_token() -> str:
+    p = ROOT / "tests" / "test_smoke.py"
+    if p.exists():
+        m = re.search(r'(?m)^\s*BASE_TOKEN\s*=\s*[\'"]([^\'"]+)[\'"]\s*$', p.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1).strip()
+    for k in TOKEN_ENV_KEYS:
+        v = os.getenv(k, "").strip()
+        if v:
+            return v
+    return ""
+
+def _extract_token_like_env_keys_from_smoke() -> List[str]:
+    """
+    从 tests/test_smoke.py 中抓取所有 env key（os.environ[...] / env[...] / environ.get(...) / getenv(...)）
+    然后仅保留“像 token 的 key”：包含 TOKEN/BEARER/AUTH/KEY/API（不区分大小写）
+    """
+    p = ROOT / "tests" / "test_smoke.py"
+    if not p.exists():
+        return []
+    s = p.read_text(encoding="utf-8")
+
+    keys = set()
+
+    # os.environ["X"] / os.environ.get("X") / os.getenv("X")
+    keys.update(re.findall(r'os\.environ\[\s*[\'"]([^\'"]+)[\'"]\s*\]', s))
+    keys.update(re.findall(r'os\.environ\.get\(\s*[\'"]([^\'"]+)[\'"]', s))
+    keys.update(re.findall(r'os\.getenv\(\s*[\'"]([^\'"]+)[\'"]', s))
+
+    # env["X"] / env.get("X")  (常见于 subprocess env dict)
+    keys.update(re.findall(r'\benv\[\s*[\'"]([^\'"]+)[\'"]\s*\]', s))
+    keys.update(re.findall(r'\benv\.get\(\s*[\'"]([^\'"]+)[\'"]', s))
+
+    keep = []
+    for k in sorted(keys):
+        u = k.upper()
+        if ("TOKEN" in u) or ("BEARER" in u) or ("AUTH" in u) or ("API" in u) or (u.endswith("KEY")) or ("_KEY" in u):
+            keep.append(k)
+    return keep
+
+BASE_TOKEN = _read_base_token()
+if not BASE_TOKEN:
+    raise RuntimeError("No bearer token available. Expected tests/test_smoke.py BASE_TOKEN or token env vars.")
+
+# Critical: align ALL discovered token-like env keys BEFORE importing app
+extra_keys = _extract_token_like_env_keys_from_smoke()
+ALL_KEYS = list(dict.fromkeys(TOKEN_ENV_KEYS + extra_keys))  # stable dedupe
+
+for k in ALL_KEYS:
+    os.environ[k] = BASE_TOKEN
+
+from fastapi.testclient import TestClient
+from app.main import app  # type: ignore
+
+
+def _load(p: Path) -> Dict[str, Any]:
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def _auth_headers() -> Dict[str, str]:
-    # In CI/local preflight we set QW_TEST_MODE=1 and a stable dev token.
-    # Keep local runs deterministic if user forgets to export it.
-    if os.getenv("QW_TEST_MODE", "").strip() == "1":
-        tok = os.getenv("QW_TEST_BEARER_TOKEN", "").strip() or "test-token"
-        return {"Authorization": f"Bearer {tok}"}
-
-    tok = os.getenv("QW_TEST_BEARER_TOKEN", "").strip()
-    if not tok:
-        return {}
-
-    return {"Authorization": f"Bearer {tok}"}
-
-
-def _load_json(fp: Path) -> Dict[str, Any]:
-    return json.loads(fp.read_text(encoding="utf-8"))
-
-
-def _find_example(keywords: List[str]) -> Optional[Path]:
-    root = Path("contracts")
-    if not root.exists():
-        return None
-    cands = list(root.rglob("*.json"))
-    kws = [k.lower() for k in keywords]
-    for p in cands:
-        name = str(p).lower()
-        if all(k in name for k in kws):
-            return p
-    return None
-
-
-def _discover_ops() -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-    spec = app.openapi()
-    paths = spec.get("paths", {}) or {}
-
-    ingest_ops: List[Tuple[str, str]] = []
-    query_ops: List[Tuple[str, str]] = []
-
-    def is_json_request(op: Dict[str, Any]) -> bool:
-        rb = op.get("requestBody") or {}
-        content = rb.get("content") or {}
-        return "application/json" in content
-
-    for path, methods in paths.items():
-        if not isinstance(methods, dict):
-            continue
-        p_low = str(path).lower()
-        for m, op in methods.items():
-            if m.lower() not in ("post", "put", "patch", "get"):
-                continue
-            if not isinstance(op, dict):
-                continue
-
-            # skip docs endpoints
-            if any(x in p_low for x in ("/docs", "/openapi", "/redoc")):
-                continue
-
-            op_low = (op.get("operationId") or "").lower()
-
-            # ingest-ish
-            if any(k in p_low for k in ("ingest", "index", "upsert", "document", "docs")) or "ingest" in op_low:
-                if m.lower() in ("post", "put", "patch") and is_json_request(op):
-                    ingest_ops.append((m.upper(), path))
-
-            # query/search-ish
-            if any(k in p_low for k in ("query", "search", "retrieve")) or any(k in op_low for k in ("query", "search")):
-                if m.lower() in ("post", "get") and (is_json_request(op) or m.lower() == "get"):
-                    query_ops.append((m.upper(), path))
-
-    # stable order to make debugging deterministic
-    ingest_ops = list(dict.fromkeys(ingest_ops))
-    query_ops = list(dict.fromkeys(query_ops))
-    return ingest_ops, query_ops
-
-
-def _request_with_fallback(
-    client: TestClient,
-    ops: List[Tuple[str, str]],
-    payload: Dict[str, Any],
-    phase: str,
-) -> Dict[str, Any]:
-    tried: List[Tuple[str, str, int]] = []
-
-    for method, path in ops[:20]:
-        r = client.request(method, path, headers=_auth_headers(), json=payload)
-        tried.append((method, path, r.status_code))
-
-        # discovery mismatch: keep trying
-        if r.status_code in (404, 405, 422):
-            continue
-
-        # auth required: treat as expected-xfail (CI has no secrets)
-        if r.status_code == 401:
-            pytest.xfail(
-                f"{phase} requires bearer auth. Set env QW_TEST_BEARER_TOKEN to a valid dev token "
-                f"(non-secret) for strict local pass, or implement a test-mode auth bypass."
-            )
-
-        assert r.status_code < 400, f"{phase} failed: {method} {path} => {r.status_code} {r.text}"
-
-        # best-effort json parse
-        try:
-            return r.json()
-        except Exception:
-            return {"_raw": r.text}
-
-    detail = "; ".join([f"{m} {p}={c}" for m, p, c in tried])
-    pytest.fail(f"{phase} endpoint not found (all candidates 404/405/422). tried: {detail}")
+    return {"Authorization": f"Bearer {BASE_TOKEN}", "Content-Type": "application/json"}
 
 
 @pytest.mark.e2e
 def test_golden_thread_ingest_then_query_evidence_list_non_empty():
+    if not INGEST_EX.exists():
+        pytest.fail(f"missing example: {INGEST_EX}")
+    if not QUERY_EX.exists():
+        pytest.fail(f"missing example: {QUERY_EX}")
+
     client = TestClient(app)
 
-    ingest_ops, query_ops = _discover_ops()
-    assert ingest_ops, "cannot discover ingest endpoint from app.openapi()"
-    assert query_ops, "cannot discover query/search endpoint from app.openapi()"
+    ingest_payload = _load(INGEST_EX)
+    query_payload = _load(QUERY_EX)
 
-    ingest_ex = _find_example(["ingest", "request"])
-    query_ex = _find_example(["query", "request"]) or _find_example(["search", "request"])
+    r1 = client.post("/v1/ingest", headers=_auth_headers(), json=ingest_payload)
+    assert r1.status_code < 400, f"ingest failed: {r1.status_code} {r1.text}"
 
-    ingest_payload = _load_json(ingest_ex) if ingest_ex else {"doc_id": "doc-1", "text": "hello quantwin"}
-    query_payload = _load_json(query_ex) if query_ex else {"query": "hello"}
+    r2 = client.post("/v1/query", headers=_auth_headers(), json=query_payload)
+    assert r2.status_code < 400, f"query failed: {r2.status_code} {r2.text}"
 
-    _request_with_fallback(client, ingest_ops, ingest_payload, phase="ingest")
-    data = _request_with_fallback(client, query_ops, query_payload, phase="query")
-
+    data = r2.json()
     ev = data.get("evidence_list")
-    assert isinstance(ev, list) and len(ev) >= 1, "expected non-empty evidence_list in query response"
+    assert isinstance(ev, list), f"expected evidence_list list, got: {type(ev)} {data}"
+    assert len(ev) >= 1, f"expected non-empty evidence_list, got: {data}"
