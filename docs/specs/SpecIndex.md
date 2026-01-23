@@ -17,3 +17,8 @@
   - `sha256sum <file>`
 
 填完后提交即可。
+
+## Baseline Specs (PDF)
+- RS v3.1: `docs/specs/RS_v3.1.pdf`
+- AS v5.0-7.1: `docs/specs/AS_v5.0-7.1.pdf`
+- Checksums: `docs/specs/manifest.md`

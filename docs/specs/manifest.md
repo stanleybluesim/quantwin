@@ -1,5 +1,5 @@
 # Specs Manifest
-- generated_at: 2026-01-22T12:28:54
+- generated_at: 2026-01-23T13:10:22
 
 | Spec | Path | Size(bytes) | SHA256 |
 |---|---|---:|---|
