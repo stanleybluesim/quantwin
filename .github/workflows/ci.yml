@@ -32,6 +32,8 @@ jobs:
           ls -la
           test -f requirements.txt
           python -m pip install -r requirements.txt
+          - name: Validate docs
+            run: bash scripts/validate_docs.sh
           pytest -q
         env:
           PYTHONPATH: .
