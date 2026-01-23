@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+echo "==> validate docs"
+bash scripts/validate_docs.sh
+
 cd "$(git rev-parse --show-toplevel)"
 
 echo "week4_day3 SAFE: will NOT overwrite app/*.py"
