@@ -1,77 +1,57 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
-
-MAN="docs/specs/manifest.md"
-RS="docs/specs/RS_v3.1.pdf"
-AS="docs/specs/AS_v5.0-7.1.pdf"
 
 echo "==> validate docs"
-test -f "$MAN"
-test -f "$RS"
-test -f "$AS"
+test -f docs/specs/RS_v3.1.pdf
+test -f docs/specs/AS_v5.0-7.1.pdf
+test -f docs/specs/manifest.md
+test -f docs/specs/SpecIndex.md
 
 python3 - <<'PY'
 from pathlib import Path
-import hashlib, os, re, sys
+import hashlib, os, re
 
-man = Path("docs/specs/manifest.md")
-rs = Path("docs/specs/RS_v3.1.pdf")
-as_ = Path("docs/specs/AS_v5.0-7.1.pdf")
+manifest = Path("docs/specs/manifest.md").read_text(encoding="utf-8").splitlines()
 
-text = man.read_text(encoding="utf-8")
-
+# parse markdown table rows
 rows = []
-for ln in text.splitlines():
-  if not ln.startswith("|"):
-    continue
-  if re.match(r"^\|\s*-+\s*\|", ln):
-    continue
-  cols = [c.strip() for c in ln.strip().strip("|").split("|")]
-  if len(cols) != 4:
-    continue
-  if cols[0].lower() == "spec":
-    continue
-  rows.append(cols)
+for ln in manifest:
+    if ln.startswith("|") and "`docs/specs/" in ln:
+        cols = [c.strip() for c in ln.strip("|").split("|")]
+        if len(cols) >= 4:
+            spec, path, size, sha = cols[0], cols[1], cols[2], cols[3]
+            path = path.strip("`")
+            sha = sha.strip("`")
+            try:
+                size = int(size)
+            except Exception:
+                continue
+            rows.append((spec, path, size, sha))
 
-if not rows:
-  print("FAIL: manifest.md has no parsable rows")
-  sys.exit(2)
+if len(rows) < 2:
+    raise SystemExit("FAIL: manifest.md has no parsable rows")
 
-def sha256(p: Path) -> str:
-  h = hashlib.sha256()
-  h.update(p.read_bytes())
-  return h.hexdigest()
+def sha256(p: str) -> str:
+    b = Path(p).read_bytes()
+    return hashlib.sha256(b).hexdigest()
 
-expected = {
-  str(rs): (os.path.getsize(rs), sha256(rs)),
-  str(as_): (os.path.getsize(as_), sha256(as_)),
-}
+for spec, path, size, sha in rows:
+    if not Path(path).exists():
+        raise SystemExit(f"FAIL: missing file referenced in manifest: {path}")
+    real_size = os.path.getsize(path)
+    real_sha = sha256(path)
+    if real_size != size:
+        raise SystemExit(f"FAIL: size mismatch for {path}: manifest={size} real={real_size}")
+    if real_sha != sha:
+        raise SystemExit(f"FAIL: sha mismatch for {path}: manifest={sha} real={real_sha}")
 
-seen = {}
-for spec, path, size_s, sha_s in rows:
-  path = path.strip("`")
-  sha_s = sha_s.strip("`")
-  try:
-    size_i = int(size_s)
-  except:
-    continue
-  seen[path] = (size_i, sha_s)
-
-missing = [p for p in expected.keys() if p not in seen]
+idx = Path("docs/specs/SpecIndex.md").read_text(encoding="utf-8")
+need = ["docs/specs/RS_v3.1.pdf", "docs/specs/AS_v5.0-7.1.pdf", "docs/specs/manifest.md"]
+missing = [x for x in need if x not in idx]
 if missing:
-  print("FAIL: manifest missing rows for:", missing)
-  sys.exit(2)
-
-for p, (size_e, sha_e) in expected.items():
-  size_g, sha_g = seen[p]
-  if size_g != size_e or sha_g != sha_e:
-    print("FAIL: manifest mismatch:", p)
-    print("  expected:", size_e, sha_e)
-    print("  got     :", size_g, sha_g)
-    sys.exit(2)
+    raise SystemExit("FAIL: SpecIndex missing references: " + ", ".join(missing))
 
 print("OK: manifest files exist + sha256/size match")
+print("OK: SpecIndex references baseline specs")
+print("OK: docs validate")
 PY
-
-echo "OK: docs validate"
