@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "==> validate docs"
+bash scripts/validate_docs.sh
+
 cd "$(git rev-parse --show-toplevel)"
 
 echo "==> validate openapi"
