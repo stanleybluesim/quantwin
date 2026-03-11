@@ -11,10 +11,17 @@ log()  { printf '[%s] [run:%s] [trace:%s] [audit:%s] %s\n'  "$(ts)" "$RUN_ID" "$
 info() { printf '[%s] [INFO] [run:%s] [trace:%s] [audit:%s] %s\n'  "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
 err()  { printf '[%s] [ERROR] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*" >&2; }
 
+PYTHON_BIN=""
 if [[ -x "$REPO_ROOT/.venv-strictgate/bin/python" ]]; then
   PYTHON_BIN="$REPO_ROOT/.venv-strictgate/bin/python"
+elif command -v python3.11 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python)"
 else
-  err "missing strict gate venv python: $REPO_ROOT/.venv-strictgate/bin/python"
+  err "python interpreter not found"
   exit 2
 fi
 
