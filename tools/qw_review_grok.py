@@ -13,7 +13,6 @@ import hashlib
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # === Traceability ===
 RUN_ID = os.environ.get("RUN_ID", datetime.now().strftime("%Y%m%d%H%M%S"))
