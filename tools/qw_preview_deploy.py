@@ -72,7 +72,7 @@ def safety_check() -> bool:
         ).stdout.strip()
         
         if status:
-            log(f"WARNING: Uncommitted changes detected", "WARN")
+            log("WARNING: Uncommitted changes detected", "WARN")
             log_audit("WARN", "Uncommitted changes present")
         
         return True
