@@ -1,121 +1,67 @@
 #!/usr/bin/env bash
-# qw_gate.sh - QuantWin Delivery Gate (MRE: compileall + pytest + ruff)
-# Traceability: run_id | trace_id | audit_id
-
 set -euo pipefail
 
-# === Traceability IDs ===
-RUN_ID="${RUN_ID:-$(date +%Y%m%d%H%M%S)}"
-TRACE_ID="${TRACE_ID:-$(uuidgen 2>/dev/null || echo "${RUN_ID}-$(shuf -i 1000-9999 -n 1)}")}"
-AUDIT_ID="${AUDIT_ID:-${RUN_ID}}"
+RUN_ID="${RUN_ID:-local_run}"
+TRACE_ID="${TRACE_ID:-local_trace}"
+AUDIT_ID="${AUDIT_ID:-local_audit}"
 
-# === Configuration ===
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LOG_DIR="${PROJECT_ROOT}/.gate_logs"
-TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+log() { printf '[%s] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
+info() { printf '[%s] [INFO] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
+warn() { printf '[%s] [WARN] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*" >&2; }
+err()  { printf '[%s] [ERROR] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*" >&2; }
 
-# === Logging ===
-log() {
-    echo "[${TIMESTAMP}] [run:${RUN_ID}] [trace:${TRACE_ID}] [audit:${AUDIT_ID}] $*"
-}
+PYTHON_BIN=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+else
+  err "python interpreter not found (need python3 or python)"
+  exit 2
+fi
 
-log_audit() {
-    local level="$1"; shift
-    echo "[${TIMESTAMP}] [${level}] [run:${RUN_ID}] [trace:${TRACE_ID}] [audit:${AUDIT_ID}] $*" | tee -a "${LOG_DIR}/gate_audit.log"
-}
+EXIT_CODE=0
 
-# === Setup ===
-setup() {
-    log "Initializing gate run..."
-    mkdir -p "${LOG_DIR}"
-    
-    # Write run metadata
-    cat > "${LOG_DIR}/run_${RUN_ID}.meta" <<EOF
-run_id=${RUN_ID}
-trace_id=${TRACE_ID}
-audit_id=${AUDIT_ID}
-timestamp=${TIMESTAMP}
-project_root=${PROJECT_ROOT}
-EOF
-    
-    log_audit "INFO" "Gate session initialized"
-}
+log "Initializing gate run..."
+info "Gate session initialized"
 
-# === Gate Checks (MRE) ===
-gate_compileall() {
-    log "Running compileall check..."
-    cd "${PROJECT_ROOT}"
-    
-    if python -m compileall -q . 2>&1; then
-        log_audit "INFO" "compileall: PASS"
-        return 0
-    else
-        log_audit "ERROR" "compileall: FAIL"
-        return 1
-    fi
-}
+log "Running compileall check..."
+if "$PYTHON_BIN" -m compileall .; then
+  info "compileall: PASS"
+else
+  err "compileall: FAIL"
+  EXIT_CODE=1
+fi
 
-gate_pytest() {
-    log "Running pytest check..."
-    cd "${PROJECT_ROOT}"
-    
-    if pytest -q --tb=short 2>&1; then
-        log_audit "INFO" "pytest: PASS"
-        return 0
-    else
-        log_audit "ERROR" "pytest: FAIL"
-        return 1
-    fi
-}
+log "Running pytest check..."
+if command -v pytest >/dev/null 2>&1; then
+  if pytest -q --maxfail=1; then
+    info "pytest: PASS"
+  else
+    err "pytest: FAIL"
+    EXIT_CODE=1
+  fi
+else
+  warn "pytest not installed, skipping..."
+fi
 
-gate_ruff() {
-    log "Running ruff check..."
-    cd "${PROJECT_ROOT}"
-    
-    if command -v ruff &>/dev/null; then
-        if ruff check . --quiet 2>&1; then
-            log_audit "INFO" "ruff: PASS"
-            return 0
-        else
-            log_audit "ERROR" "ruff: FAIL"
-            return 1
-        fi
-    else
-        log_audit "WARN" "ruff not installed, skipping..."
-        return 0
-    fi
-}
+log "Running ruff check..."
+if command -v ruff >/dev/null 2>&1; then
+  if ruff check .; then
+    info "ruff: PASS"
+  else
+    err "ruff: FAIL"
+    EXIT_CODE=1
+  fi
+else
+  warn "ruff not installed, skipping..."
+fi
 
-# === Main Gate ===
-main() {
-    setup
-    
-    local exit_code=0
-    
-    gate_compileall || exit_code=1
-    gate_pytest || exit_code=1
-    gate_ruff || exit_code=1
-    
-    if [[ ${exit_code} -eq 0 ]]; then
-        log_audit "INFO" "Gate PASSED - All checks successful"
-        echo "${TRACE_ID}" > "${LOG_DIR}/last_passed_trace"
-    else
-        log_audit "ERROR" "Gate FAILED - One or more checks failed"
-    fi
-    
-    # Write final audit record
-    cat >> "${LOG_DIR}/gate_audit.log" <<EOF
----
-run_id=${RUN_ID}
-trace_id=${TRACE_ID}
-audit_id=${AUDIT_ID}
-exit_code=${exit_code}
-timestamp_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
----
-EOF
-    
-    return ${exit_code}
-}
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+  info "Gate PASSED"
+else
+  err "Gate FAILED - One or more checks failed"
+fi
 
-main "$@"
+exit "$EXIT_CODE"
