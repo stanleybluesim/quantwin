@@ -1,236 +1,106 @@
 #!/usr/bin/env python3
-"""
-qw_preview_deploy.py - QuantWin Preview & Deploy Tool
-Traceability: run_id | trace_id | audit_id
+from __future__ import annotations
 
-Handles preview environment setup and deployment orchestration.
-DOES NOT merge, DOES NOT modify branch protection, DOES NOT push to main.
-"""
-
-import os
-import sys
+import argparse
 import json
-import shutil
-import subprocess
+import tarfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
-# === Traceability ===
-RUN_ID = os.environ.get("RUN_ID", datetime.now().strftime("%Y%m%d%H%M%S"))
-TRACE_ID = os.environ.get("TRACE_ID", f"{RUN_ID}-{os.urandom(4).hex()}")
-AUDIT_ID = os.environ.get("AUDIT_ID", RUN_ID)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DELIVERY_DIR = REPO_ROOT / "artifacts" / "delivery"
 
-# === Configuration ===
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = PROJECT_ROOT / ".gate_logs"
-PREVIEW_DIR = PROJECT_ROOT / ".preview"
-TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+DEFAULT_INCLUDE = [
+    ".github/workflows/dev-gate.yml",
+    "tools/qw_gate.sh",
+    "tools/qw_review_grok.py",
+    "tools/qw_preview_deploy.py",
+    "requirements-dev.txt",
+    ".ruff.toml",
+    "contracts/openapi/openapi.yaml",
+    "README.md",
+]
 
-# === Safety Guards ===
-PROTECTED_BRANCHES = {"main", "master", "prod"}
-ALLOWED_ACTIONS = {"preview", "deploy_staging", "dry_run"}
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
+def existing_files() -> list[Path]:
+    files: list[Path] = []
+    for rel in DEFAULT_INCLUDE:
+        p = REPO_ROOT / rel
+        if p.exists() and p.is_file():
+            files.append(p)
+    return files
 
-def log(message: str, level: str = "INFO") -> None:
-    """Log with traceability context."""
-    prefix = f"[{TIMESTAMP}] [{level}] [run:{RUN_ID}] [trace:{TRACE_ID}] [audit:{AUDIT_ID}]"
-    print(f"{prefix} {message}")
+def build_bundle(bundle_path: Path, files: list[Path]) -> None:
+    with tarfile.open(bundle_path, "w:gz") as tar:
+        for p in files:
+            tar.add(p, arcname=str(p.relative_to(REPO_ROOT)))
 
-
-def log_audit(level: str, message: str) -> None:
-    """Log to audit file."""
-    LOG_DIR.mkdir(exist_ok=True)
-    audit_line = f"[{TIMESTAMP}] [{level}] [run:{RUN_ID}] [trace:{TRACE_ID}] [audit:{AUDIT_ID}] {message}\n"
-    with open(LOG_DIR / "deploy_audit.log", "a") as f:
-        f.write(audit_line)
-
-
-def safety_check() -> bool:
-    """Ensure we're not doing anything dangerous."""
-    try:
-        # Check current branch
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10
-        ).stdout.strip()
-        
-        if branch in PROTECTED_BRANCHES:
-            log(f"WARNING: On protected branch '{branch}'. Deployment actions limited.", "WARN")
-            log_audit("WARN", f"Operation on protected branch: {branch}")
-        
-        # Check for uncommitted changes
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10
-        ).stdout.strip()
-        
-        if status:
-            log("WARNING: Uncommitted changes detected", "WARN")
-            log_audit("WARN", "Uncommitted changes present")
-        
-        return True
-        
-    except Exception as e:
-        log(f"Safety check error: {e}", "ERROR")
-        log_audit("ERROR", f"Safety check failed: {e}")
-        return False
-
-
-def create_preview() -> dict:
-    """Create preview environment snapshot."""
-    log("Creating preview environment...")
-    log_audit("INFO", "Preview creation started")
-    
-    PREVIEW_DIR.mkdir(exist_ok=True)
-    
-    # Copy key artifacts
-    artifacts = {
-        "tools": PREVIEW_DIR / "tools",
-        "app": PREVIEW_DIR / "app",
-        "contracts": PREVIEW_DIR / "contracts"
-    }
-    
-    for src_name, dst_path in artifacts.items():
-        src = PROJECT_ROOT / src_name
-        if src.exists():
-            if dst_path.exists():
-                shutil.rmtree(dst_path)
-            shutil.copytree(src, dst_path)
-            log(f"Copied {src_name}/ to preview")
-    
-    # Write preview manifest
-    manifest = {
-        "run_id": RUN_ID,
-        "trace_id": TRACE_ID,
-        "audit_id": AUDIT_ID,
-        "timestamp": TIMESTAMP,
-        "source_branch": subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10
-        ).stdout.strip(),
-        "source_commit": subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10
-        ).stdout.strip(),
-        "preview_path": str(PREVIEW_DIR),
-        "artifacts": list(artifacts.keys())
-    }
-    
-    manifest_path = PREVIEW_DIR / "preview_manifest.json"
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
-    
-    log_audit("INFO", f"Preview created at {PREVIEW_DIR}")
-    log(f"Preview manifest: {manifest_path}")
-    
-    return manifest
-
-
-def deploy_staging(dry_run: bool = True) -> dict:
-    """Simulate staging deployment (dry-run by default)."""
-    log(f"Staging deployment (dry_run={dry_run})...")
-    log_audit("INFO", f"Staging deployment initiated (dry_run={dry_run})")
-    
-    deployment_record = {
-        "run_id": RUN_ID,
-        "trace_id": TRACE_ID,
-        "audit_id": AUDIT_ID,
-        "timestamp": TIMESTAMP,
-        "action": "deploy_staging",
-        "dry_run": dry_run,
-        "status": "SIMULATED" if dry_run else "PENDING",
-        "target": "staging",
-        "notes": "No actual deployment - skeleton only"
-    }
-    
-    # Write deployment record
-    record_path = LOG_DIR / f"deploy_{RUN_ID}.json"
-    with open(record_path, "w") as f:
-        json.dump(deployment_record, f, indent=2)
-    
-    log_audit("INFO", f"Deployment record saved: {record_path}")
-    log(f"Deployment record: {record_path}")
-    
-    return deployment_record
-
-
-def rollback(last_trace_id: Optional[str] = None) -> bool:
-    """Rollback to previous state using audit trail."""
-    log("Initiating rollback...")
-    log_audit("INFO", "Rollback initiated")
-    
-    if last_trace_id:
-        log(f"Rolling back to trace: {last_trace_id}")
-    else:
-        # Find last successful run
-        last_trace_file = LOG_DIR / "last_passed_trace"
-        if last_trace_file.exists():
-            last_trace_id = last_trace_file.read_text().strip()
-            log(f"Found last passed trace: {last_trace_id}")
-        else:
-            log("No previous trace found for rollback", "ERROR")
-            return False
-    
-    rollback_record = {
-        "run_id": RUN_ID,
-        "trace_id": TRACE_ID,
-        "audit_id": AUDIT_ID,
-        "timestamp": TIMESTAMP,
-        "action": "rollback",
-        "target_trace": last_trace_id,
-        "status": "COMPLETED"
-    }
-    
-    record_path = LOG_DIR / f"rollback_{RUN_ID}.json"
-    with open(record_path, "w") as f:
-        json.dump(rollback_record, f, indent=2)
-    
-    log_audit("INFO", f"Rollback completed, record: {record_path}")
-    return True
-
+def write_summary(summary_path: Path, manifest: dict) -> None:
+    lines = [
+        "# Preview Summary",
+        "",
+        f"- generated_at: {manifest['generated_at']}",
+        f"- task_id: {manifest['task_id']}",
+        f"- run_id: {manifest['run_id']}",
+        f"- trace_id: {manifest['trace_id']}",
+        f"- audit_id: {manifest['audit_id']}",
+        f"- preview_type: {manifest['preview_type']}",
+        f"- status: {manifest['status']}",
+        f"- bundle_path: {manifest['bundle_path']}",
+        "",
+        "## Included Files",
+    ]
+    for item in manifest["included_files"]:
+        lines.append(f"- {item}")
+    summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 def main() -> int:
-    """Main entry point."""
-    log("QuantWin Preview/Deploy Tool initialized")
-    log_audit("INFO", "Tool session started")
-    
-    # Safety first
-    if not safety_check():
-        log("Safety check failed, aborting", "ERROR")
-        return 1
-    
-    action = sys.argv[1] if len(sys.argv) > 1 else "preview"
-    
-    if action == "preview":
-        create_preview()
-    elif action == "deploy_staging":
-        dry_run = "--dry-run" not in sys.argv
-        deploy_staging(dry_run=dry_run)
-    elif action == "rollback":
-        trace_id = sys.argv[2] if len(sys.argv) > 2 else None
-        return 0 if rollback(trace_id) else 1
-    else:
-        log(f"Unknown action: {action}", "ERROR")
-        print(f"Usage: {sys.argv[0]} [preview|deploy_staging|rollback] [options]")
-        return 1
-    
-    log("Operation complete")
-    log_audit("INFO", "Operation completed successfully")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task_id", default="preview_deploy")
+    parser.add_argument("--run_id", default=f"run_{uuid.uuid4().hex[:12]}")
+    parser.add_argument("--trace_id", default=uuid.uuid4().hex)
+    parser.add_argument("--audit_id", default=f"aud_{uuid.uuid4().hex[:12]}")
+    parser.add_argument("--preview_type", default="artifact_download")
+    args = parser.parse_args()
+
+    DELIVERY_DIR.mkdir(parents=True, exist_ok=True)
+
+    files = existing_files()
+    bundle_name = f"preview_bundle_{args.run_id}.tgz"
+    bundle_path = DELIVERY_DIR / bundle_name
+
+    status = "READY" if files else "DEGRADED"
+    if files:
+        build_bundle(bundle_path, files)
+
+    manifest = {
+        "generated_at": utc_now(),
+        "task_id": args.task_id,
+        "run_id": args.run_id,
+        "trace_id": args.trace_id,
+        "audit_id": args.audit_id,
+        "preview_type": args.preview_type,
+        "status": status,
+        "bundle_path": str(bundle_path.relative_to(REPO_ROOT)) if bundle_path.exists() else None,
+        "included_files": [str(p.relative_to(REPO_ROOT)) for p in files],
+        "notes": [
+            "Preview is delivered as downloadable artifact bundle.",
+            "Status READY means at least one preview file was packaged.",
+            "Status DEGRADED means no eligible preview files were found.",
+        ],
+    }
+
+    manifest_path = DELIVERY_DIR / "PreviewManifest.json"
+    summary_path = DELIVERY_DIR / "PreviewSummary.md"
+
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_summary(summary_path, manifest)
+
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0
 
-
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

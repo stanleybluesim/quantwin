@@ -9,6 +9,7 @@ permissions:
   contents: read
   pull-requests: read
   checks: write
+  actions: read
 
 jobs:
   gate:
@@ -24,7 +25,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dev dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -32,7 +33,9 @@ jobs:
           if [[ -f requirements.txt ]]; then
             pip install -r requirements.txt
           fi
-          pip install -r requirements-dev.txt
+          if [[ -f requirements-dev.txt ]]; then
+            pip install -r requirements-dev.txt
+          fi
 
       - name: Run strict gate
         env:
@@ -43,3 +46,47 @@ jobs:
         run: |
           set -euo pipefail
           bash tools/qw_gate.sh
+
+  preview:
+    needs: gate
+    if: ${{ needs.gate.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [[ -f requirements.txt ]]; then
+            pip install -r requirements.txt
+          fi
+          if [[ -f requirements-dev.txt ]]; then
+            pip install -r requirements-dev.txt
+          fi
+
+      - name: Generate preview artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/qw_preview_deploy.py \
+            --task_id preview_deploy \
+            --run_id gha_${{ github.run_id }} \
+            --trace_id gha_${{ github.run_id }}_${{ github.run_attempt }} \
+            --audit_id gha_${{ github.run_id }}
+
+      - name: Upload preview delivery
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-delivery-${{ github.run_id }}
+          path: artifacts/delivery/
+          if-no-files-found: error
