@@ -90,3 +90,64 @@ jobs:
           name: preview-delivery-${{ github.run_id }}
           path: artifacts/delivery/
           if-no-files-found: error
+
+  review:
+    needs: preview
+    if: ${{ needs.preview.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [[ -f requirements.txt ]]; then
+            pip install -r requirements.txt
+          fi
+          if [[ -f requirements-dev.txt ]]; then
+            pip install -r requirements-dev.txt
+          fi
+
+      - name: Download preview delivery
+        uses: actions/download-artifact@v4
+        with:
+          name: preview-delivery-${{ github.run_id }}
+          path: artifacts/delivery/
+
+      - name: Fetch base branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin ${{ github.base_ref }}
+
+      - name: Generate review artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/qw_review_grok.py \
+            --task_id review_grok \
+            --run_id gha_${{ github.run_id }} \
+            --trace_id gha_${{ github.run_id }}_${{ github.run_attempt }} \
+            --audit_id gha_${{ github.run_id }} \
+            --base_ref origin/${{ github.base_ref }} \
+            --provider local-rule-review \
+            --review_mode offline
+
+      - name: Upload review artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-delivery-${{ github.run_id }}
+          path: artifacts/review/
+          if-no-files-found: error
