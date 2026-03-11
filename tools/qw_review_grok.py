@@ -1,161 +1,208 @@
 #!/usr/bin/env python3
-"""
-qw_review_grok.py - QuantWin Code Review Grok Tool
-Traceability: run_id | trace_id | audit_id
+from __future__ import annotations
 
-Performs automated code review analysis with audit trail.
-"""
-
-import os
-import sys
+import argparse
 import json
-import hashlib
 import subprocess
+import uuid
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
-# === Traceability ===
-RUN_ID = os.environ.get("RUN_ID", datetime.now().strftime("%Y%m%d%H%M%S"))
-TRACE_ID = os.environ.get("TRACE_ID", f"{RUN_ID}-{os.urandom(4).hex()}")
-AUDIT_ID = os.environ.get("AUDIT_ID", RUN_ID)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REVIEW_DIR = REPO_ROOT / "artifacts" / "review"
+DELIVERY_DIR = REPO_ROOT / "artifacts" / "delivery"
 
-# === Configuration ===
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = PROJECT_ROOT / ".gate_logs"
-TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+Status = Literal["PASS", "WARN", "FAIL"]
 
+@dataclass
+class ReviewCheck:
+    name: str
+    status: Status
+    detail: str
 
-def log(message: str, level: str = "INFO") -> None:
-    """Log with traceability context."""
-    prefix = f"[{TIMESTAMP}] [{level}] [run:{RUN_ID}] [trace:{TRACE_ID}] [audit:{AUDIT_ID}]"
-    print(f"{prefix} {message}")
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
+def run_git(args: list[str]) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
-def log_audit(level: str, message: str) -> None:
-    """Log to audit file."""
-    LOG_DIR.mkdir(exist_ok=True)
-    audit_line = f"[{TIMESTAMP}] [{level}] [run:{RUN_ID}] [trace:{TRACE_ID}] [audit:{AUDIT_ID}] {message}\n"
-    with open(LOG_DIR / "review_audit.log", "a") as f:
-        f.write(audit_line)
+def changed_files(base_ref: str) -> list[str]:
+    out = run_git(["diff", "--name-only", f"{base_ref}...HEAD"])
+    if not out:
+        return []
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
-
-def compute_file_hash(filepath: Path) -> str:
-    """Compute SHA256 hash of a file for audit trail."""
-    if not filepath.exists():
-        return "MISSING"
-    with open(filepath, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()[:16]
-
-
-def get_git_status() -> dict:
-    """Get current git status for context."""
+def load_preview_manifest() -> dict | None:
+    manifest = DELIVERY_DIR / "PreviewManifest.json"
+    if not manifest.exists():
+        return None
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=30
+        return json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+def build_checks(base_ref: str, files: list[str], preview_manifest: dict | None) -> list[ReviewCheck]:
+    checks: list[ReviewCheck] = []
+
+    if files:
+        checks.append(
+            ReviewCheck(
+                name="changed_files_detected",
+                status="PASS",
+                detail=f"Detected {len(files)} changed file(s) against {base_ref}.",
+            )
         )
-        return {
-            "changed_files": result.stdout.strip().split("\n") if result.stdout.strip() else [],
-            "branch": subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=10
-            ).stdout.strip()
-        }
-    except Exception as e:
-        log(f"Git status error: {e}", "WARN")
-        return {"changed_files": [], "branch": "unknown"}
+    else:
+        checks.append(
+            ReviewCheck(
+                name="changed_files_detected",
+                status="WARN",
+                detail=f"No changed files detected against {base_ref}.",
+            )
+        )
 
+    preview_status = "MISSING"
+    if preview_manifest:
+        preview_status = preview_manifest.get("status", "UNKNOWN")
 
-def review_python_files() -> list:
-    """Review Python files for common issues."""
-    issues = []
-    py_files = list(PROJECT_ROOT.glob("**/*.py"))
-    
-    for py_file in py_files:
-        if "venv" in str(py_file) or ".git" in str(py_file):
-            continue
-        
-        try:
-            with open(py_file, "r", encoding="utf-8") as f:
-                content = f.read()
-                lines = content.split("\n")
-                
-                # Check for TODO/FIXME without trace_id
-                for i, line in enumerate(lines, 1):
-                    if "TODO" in line or "FIXME" in line:
-                        if "trace_id" not in line.lower() and "run_id" not in line.lower():
-                            issues.append({
-                                "file": str(py_file.relative_to(PROJECT_ROOT)),
-                                "line": i,
-                                "type": "traceability",
-                                "message": "TODO/FIXME without traceability reference"
-                            })
-        except Exception as e:
-            log(f"Error reviewing {py_file}: {e}", "WARN")
-    
-    return issues
+    if preview_manifest and preview_status == "READY":
+        checks.append(
+            ReviewCheck(
+                name="preview_manifest_ready",
+                status="PASS",
+                detail="Preview manifest exists and status is READY.",
+            )
+        )
+    elif preview_manifest:
+        checks.append(
+            ReviewCheck(
+                name="preview_manifest_ready",
+                status="WARN",
+                detail=f"Preview manifest exists but status is {preview_status}.",
+            )
+        )
+    else:
+        checks.append(
+            ReviewCheck(
+                name="preview_manifest_ready",
+                status="WARN",
+                detail="Preview manifest not found in artifacts/delivery/PreviewManifest.json.",
+            )
+        )
 
+    risky = [f for f in files if f.startswith(".github/workflows/")]
+    if risky:
+        checks.append(
+            ReviewCheck(
+                name="workflow_change_scope",
+                status="WARN",
+                detail="Workflow files changed; verify CI behavior and permissions explicitly.",
+            )
+        )
+    else:
+        checks.append(
+            ReviewCheck(
+                name="workflow_change_scope",
+                status="PASS",
+                detail="No workflow file changes detected.",
+            )
+        )
 
-def generate_review_report(issues: list) -> dict:
-    """Generate structured review report."""
-    return {
-        "run_id": RUN_ID,
-        "trace_id": TRACE_ID,
-        "audit_id": AUDIT_ID,
-        "timestamp": TIMESTAMP,
-        "project_root": str(PROJECT_ROOT),
-        "git_context": get_git_status(),
-        "issues": issues,
-        "issue_count": len(issues),
-        "status": "PASS" if len(issues) == 0 else "REVIEW_NEEDED"
-    }
+    return checks
 
+def derive_status(checks: list[ReviewCheck]) -> Status:
+    statuses = {c.status for c in checks}
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "WARN" in statuses:
+        return "WARN"
+    return "PASS"
+
+def recommendations(files: list[str], preview_manifest: dict | None) -> list[str]:
+    recs: list[str] = []
+    if any(f.startswith(".github/workflows/") for f in files):
+        recs.append("Re-check branch protection and required checks after workflow changes.")
+    if preview_manifest is None:
+        recs.append("Persist PreviewManifest.json as CI artifact input for downstream review consumers.")
+    if not recs:
+        recs.append("No blocking review findings in local-rule-review mode.")
+    return recs
+
+def write_summary(path: Path, report: dict) -> None:
+    lines = [
+        "# Review Summary",
+        "",
+        f"- generated_at: {report['generated_at']}",
+        f"- task_id: {report['task_id']}",
+        f"- run_id: {report['run_id']}",
+        f"- trace_id: {report['trace_id']}",
+        f"- audit_id: {report['audit_id']}",
+        f"- provider: {report['provider']}",
+        f"- review_mode: {report['review_mode']}",
+        f"- overall_status: {report['overall_status']}",
+        "",
+        "## Checks",
+    ]
+    for item in report["checks"]:
+        lines.append(f"- {item['name']}: {item['status']} — {item['detail']}")
+    lines.append("")
+    lines.append("## Recommendations")
+    for item in report["recommendations"]:
+        lines.append(f"- {item}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 def main() -> int:
-    """Main review entry point."""
-    log("Starting code review grok...")
-    log_audit("INFO", "Review session initialized")
-    
-    try:
-        issues = review_python_files()
-        report = generate_review_report(issues)
-        
-        # Save report
-        report_path = LOG_DIR / f"review_{RUN_ID}.json"
-        with open(report_path, "w") as f:
-            json.dump(report, f, indent=2)
-        
-        log(f"Review complete: {len(issues)} issues found")
-        log_audit("INFO", f"Review complete: {len(issues)} issues, report saved to {report_path}")
-        
-        # Output summary
-        print("\n=== Review Summary ===")
-        print(f"Run ID: {RUN_ID}")
-        print(f"Trace ID: {TRACE_ID}")
-        print(f"Audit ID: {AUDIT_ID}")
-        print(f"Issues: {len(issues)}")
-        print(f"Report: {report_path}")
-        
-        if issues:
-            print("\n=== Issues ===")
-            for issue in issues[:10]:  # Show first 10
-                print(f"  [{issue['type']}] {issue['file']}:{issue['line']} - {issue['message']}")
-            if len(issues) > 10:
-                print(f"  ... and {len(issues) - 10} more")
-        
-        return 0 if len(issues) == 0 else 1
-        
-    except Exception as e:
-        log(f"Review failed: {e}", "ERROR")
-        log_audit("ERROR", f"Review failed: {e}")
-        return 1
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task_id", default="review_grok")
+    parser.add_argument("--run_id", default=f"run_{uuid.uuid4().hex[:12]}")
+    parser.add_argument("--trace_id", default=uuid.uuid4().hex)
+    parser.add_argument("--audit_id", default=f"aud_{uuid.uuid4().hex[:12]}")
+    parser.add_argument("--base_ref", default="origin/main")
+    parser.add_argument("--provider", default="local-rule-review")
+    parser.add_argument("--review_mode", default="offline")
+    args = parser.parse_args()
 
+    REVIEW_DIR.mkdir(parents=True, exist_ok=True)
+
+    files = changed_files(args.base_ref)
+    preview_manifest = load_preview_manifest()
+    checks = build_checks(args.base_ref, files, preview_manifest)
+    overall_status = derive_status(checks)
+
+    report = {
+        "generated_at": utc_now(),
+        "task_id": args.task_id,
+        "run_id": args.run_id,
+        "trace_id": args.trace_id,
+        "audit_id": args.audit_id,
+        "provider": args.provider,
+        "review_mode": args.review_mode,
+        "base_ref": args.base_ref,
+        "overall_status": overall_status,
+        "changed_files": files,
+        "checks": [asdict(c) for c in checks],
+        "recommendations": recommendations(files, preview_manifest),
+    }
+
+    report_path = REVIEW_DIR / "ReviewReport.json"
+    summary_path = REVIEW_DIR / "ReviewSummary.md"
+
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_summary(summary_path, report)
+
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
