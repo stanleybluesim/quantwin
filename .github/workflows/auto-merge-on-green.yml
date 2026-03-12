@@ -11,9 +11,13 @@ permissions:
   pull-requests: write
   checks: read
 
+concurrency:
+  group: automerge-${{ github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   automerge:
-    if: ${{ github.event_name == 'workflow_run' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -28,20 +32,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run auto-merge dry guard
+      - name: Run auto-merge guard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           python tools/qw_automerge_guard.py \
-            --mode dry-run \
+            --mode workflow-run \
+            --event-path "$GITHUB_EVENT_PATH" \
             --repo "$GITHUB_REPOSITORY" \
             --base-ref main \
+            --merge-method merge \
+            --delete-branch \
             --required-check contract-check \
             --required-check gate \
             --required-check preview \
             --required-check review
 
       - name: Upload auto-merge report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: automerge-report-${{ github.run_id }}
