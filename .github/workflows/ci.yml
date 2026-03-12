@@ -11,7 +11,12 @@ jobs:
       QW_TEST_MODE: "1"
       QW_TEST_BEARER_TOKEN: "test-token"
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Validate docs
         run: bash scripts/validate_docs.sh
 
