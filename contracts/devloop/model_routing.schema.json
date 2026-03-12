@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantwin/contracts/devloop/model_routing.schema.json",
+  "title": "Model Routing Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "routing_version",
+    "default_bootstrap_provider",
+    "providers",
+    "task_routes",
+    "timeout_policy",
+    "retry_policy",
+    "fallback_policy",
+    "circuit_breaker"
+  ],
+  "properties": {
+    "routing_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "default_bootstrap_provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider_id", "role", "enabled"],
+        "properties": {
+          "provider_id": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": [
+              "bootstrap",
+              "specialist",
+              "reviewer",
+              "control_plane"
+            ]
+          },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    },
+    "task_routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_type", "primary_provider"],
+        "properties": {
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "bootstrap",
+              "classify",
+              "quick_plan",
+              "shell_guidance",
+              "architecture",
+              "deep_implementation",
+              "spec_rewrite",
+              "complex_reasoning",
+              "independent_review",
+              "merge_decision"
+            ]
+          },
+          "primary_provider": { "type": "string", "minLength": 1 },
+          "fallback_provider": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "timeout_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_timeout_sec"],
+      "properties": {
+        "request_timeout_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 45
+        }
+      }
+    },
+    "retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_attempts", "backoff_sec"],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2
+        },
+        "backoff_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3
+        }
+      }
+    },
+    "fallback_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "on_timeout",
+        "on_rate_limit",
+        "on_provider_unavailable",
+        "on_invalid_response"
+      ],
+      "properties": {
+        "on_timeout": {
+          "type": "string",
+          "enum": ["retry_then_block", "escalate_to_chatgpt", "block"],
+          "default": "retry_then_block"
+        },
+        "on_rate_limit": {
+          "type": "string",
+          "enum": ["block"],
+          "default": "block"
+        },
+        "on_provider_unavailable": {
+          "type": "string",
+          "enum": ["escalate_to_chatgpt", "block"],
+          "default": "escalate_to_chatgpt"
+        },
+        "on_invalid_response": {
+          "type": "string",
+          "enum": ["block", "escalate_to_chatgpt"],
+          "default": "block"
+        }
+      }
+    },
+    "circuit_breaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["open_after_failures", "cooldown_sec"],
+      "properties": {
+        "open_after_failures": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3
+        },
+        "cooldown_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 300
+        }
+      }
+    }
+  }
+}

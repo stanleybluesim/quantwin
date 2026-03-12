@@ -1,0 +1,7 @@
+{
+  "task_type": "bootstrap",
+  "selected_provider": "qwen-portal",
+  "fallback_provider": "chatgpt-openai",
+  "decision_reason": "bootstrap task MUST use default bootstrap provider unless circuit breaker is open",
+  "routing_version": "v1"
+}
