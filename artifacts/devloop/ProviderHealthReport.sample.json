@@ -1,0 +1,10 @@
+{
+  "provider": "qwen-portal",
+  "status": "HEALTHY",
+  "checked_at": "2026-03-12T00:00:00Z",
+  "latency_ms": 820,
+  "session_probe": "OK",
+  "auth_state": "VALID",
+  "error_code": "NONE",
+  "error_message": ""
+}

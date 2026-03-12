@@ -1,0 +1,95 @@
+{
+  "routing_version": "v1",
+  "default_bootstrap_provider": "qwen-portal",
+  "providers": [
+    {
+      "provider_id": "qwen-portal",
+      "role": "bootstrap",
+      "enabled": true
+    },
+    {
+      "provider_id": "chatgpt-openai",
+      "role": "specialist",
+      "enabled": true
+    },
+    {
+      "provider_id": "grok-review",
+      "role": "reviewer",
+      "enabled": true
+    },
+    {
+      "provider_id": "github-control-plane",
+      "role": "control_plane",
+      "enabled": true
+    }
+  ],
+  "task_routes": [
+    {
+      "task_type": "bootstrap",
+      "primary_provider": "qwen-portal",
+      "fallback_provider": "chatgpt-openai"
+    },
+    {
+      "task_type": "classify",
+      "primary_provider": "qwen-portal",
+      "fallback_provider": "chatgpt-openai"
+    },
+    {
+      "task_type": "quick_plan",
+      "primary_provider": "qwen-portal",
+      "fallback_provider": "chatgpt-openai"
+    },
+    {
+      "task_type": "shell_guidance",
+      "primary_provider": "qwen-portal",
+      "fallback_provider": "chatgpt-openai"
+    },
+    {
+      "task_type": "architecture",
+      "primary_provider": "chatgpt-openai",
+      "fallback_provider": null
+    },
+    {
+      "task_type": "deep_implementation",
+      "primary_provider": "chatgpt-openai",
+      "fallback_provider": null
+    },
+    {
+      "task_type": "spec_rewrite",
+      "primary_provider": "chatgpt-openai",
+      "fallback_provider": null
+    },
+    {
+      "task_type": "complex_reasoning",
+      "primary_provider": "chatgpt-openai",
+      "fallback_provider": null
+    },
+    {
+      "task_type": "independent_review",
+      "primary_provider": "grok-review",
+      "fallback_provider": null
+    },
+    {
+      "task_type": "merge_decision",
+      "primary_provider": "github-control-plane",
+      "fallback_provider": null
+    }
+  ],
+  "timeout_policy": {
+    "request_timeout_sec": 45
+  },
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_sec": 3
+  },
+  "fallback_policy": {
+    "on_timeout": "retry_then_block",
+    "on_rate_limit": "block",
+    "on_provider_unavailable": "escalate_to_chatgpt",
+    "on_invalid_response": "block"
+  },
+  "circuit_breaker": {
+    "open_after_failures": 3,
+    "cooldown_sec": 300
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantwin/contracts/devloop/provider_health.schema.json",
+  "title": "Provider Health Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "status",
+    "checked_at",
+    "latency_ms",
+    "session_probe",
+    "auth_state",
+    "error_code",
+    "error_message"
+  ],
+  "properties": {
+    "provider": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["HEALTHY", "DEGRADED", "UNAVAILABLE"]
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "session_probe": {
+      "type": "string",
+      "enum": ["OK", "FAIL", "SKIPPED"]
+    },
+    "auth_state": {
+      "type": "string",
+      "enum": ["VALID", "INVALID", "UNKNOWN"]
+    },
+    "error_code": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "TIMEOUT",
+        "RATE_LIMIT",
+        "AUTH_FAILED",
+        "PROVIDER_UNAVAILABLE",
+        "INVALID_RESPONSE"
+      ]
+    },
+    "error_message": {
+      "type": "string"
+    }
+  }
+}
