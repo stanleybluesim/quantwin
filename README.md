@@ -24,3 +24,5 @@ bash scripts/validate_schemas.sh
 ```bash
 bash scripts/validate_openapi.sh
 bash scripts/validate_schemas.sh
+
+<!-- automerge-smoke:20260312T065631Z -->
