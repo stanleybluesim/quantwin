@@ -1,0 +1,49 @@
+name: auto-merge-on-green
+
+on:
+  workflow_run:
+    workflows: ["ci", "dev-gate"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  automerge:
+    if: ${{ github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run auto-merge dry guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/qw_automerge_guard.py \
+            --mode dry-run \
+            --repo "$GITHUB_REPOSITORY" \
+            --base-ref main \
+            --required-check contract-check \
+            --required-check gate \
+            --required-check preview \
+            --required-check review
+
+      - name: Upload auto-merge report
+        uses: actions/upload-artifact@v4
+        with:
+          name: automerge-report-${{ github.run_id }}
+          path: artifacts/automerge/
+          if-no-files-found: error
