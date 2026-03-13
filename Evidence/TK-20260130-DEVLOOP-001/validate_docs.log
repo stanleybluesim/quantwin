@@ -1,0 +1,4 @@
+==> validate docs
+OK: manifest files exist + sha256/size match
+OK: SpecIndex references baseline specs
+OK: docs validate
