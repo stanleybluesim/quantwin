@@ -75,6 +75,7 @@ EXECUTED_CHECKS=()
 
 if [ "$HAS_ANY_CHANGES" = "0" ]; then
   log "No changed files detected; guard-only PASS."
+  EXECUTED_CHECKS+=("guard_only")
 else
   if [ "$HAS_OPENAPI_CHANGE" = "1" ]; then
     log "Running validate_openapi.sh..."
@@ -110,6 +111,55 @@ else
   fi
 fi
 
+EXECUTED_CHECKS_JSON="$("$PY" -c 'import json,sys; print(json.dumps(sys.argv[1:], ensure_ascii=False))' "${EXECUTED_CHECKS[@]}")"
+
+"$PY" - <<'PY'
+import json
+from pathlib import Path
+
+scope = json.loads(Path("artifacts/gate/DiffScope.json").read_text(encoding="utf-8"))
+Path("artifacts/gate/_scope_cache.json").write_text(
+    json.dumps(scope, ensure_ascii=False, indent=2), encoding="utf-8"
+)
+PY
+
+CHANGED_FILES_JSON="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print(json.dumps(d.get("changed_files", []), ensure_ascii=False))
+PY
+)"
+PROTECTED_HITS_JSON="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print(json.dumps(d.get("protected_domain_hits", []), ensure_ascii=False))
+PY
+)"
+GOV_HITS_JSON="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print(json.dumps(d.get("governance_critical_hits", []), ensure_ascii=False))
+PY
+)"
+REQ_C7="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print("true" if d.get("requires_c7_check", False) else "false")
+PY
+)"
+REQ_BOUNDARY="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print("true" if d.get("requires_boundary_guard", False) else "false")
+PY
+)"
+REQ_APPROVAL="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print("true" if d.get("requires_approval_chain", False) else "false")
+PY
+)"
+
 cat > artifacts/gate/GateReport.json <<JSON
 {
   "status": "$STATUS",
@@ -118,12 +168,13 @@ cat > artifacts/gate/GateReport.json <<JSON
   "audit_id": "$AUDIT_ID",
   "base_ref": "$BASE_REF",
   "head_ref": "$HEAD_REF",
-  "executed_checks": $(printf '%s\n' "${EXECUTED_CHECKS[@]:-}" | "$PY" - <<'PY'
-import json,sys
-items=[x.strip() for x in sys.stdin if x.strip()]
-print(json.dumps(items, ensure_ascii=False))
-PY
-)
+  "changed_files": $CHANGED_FILES_JSON,
+  "protected_domain_hits": $PROTECTED_HITS_JSON,
+  "governance_critical_hits": $GOV_HITS_JSON,
+  "requires_c7_check": $REQ_C7,
+  "requires_boundary_guard": $REQ_BOUNDARY,
+  "requires_approval_chain": $REQ_APPROVAL,
+  "executed_checks": $EXECUTED_CHECKS_JSON
 }
 JSON
 
@@ -137,8 +188,30 @@ cat > artifacts/gate/GateReport.md <<MD
 - base_ref: $BASE_REF
 - head_ref: $HEAD_REF
 
+## Changed Files
+$( "$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+for x in d.get("changed_files", []):
+    print(f"- {x}")
+PY
+)
+
+## Protected Domain Hits
+$( "$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+hits=d.get("protected_domain_hits", [])
+if hits:
+    for x in hits:
+        print(f"- {x}")
+else:
+    print("- none")
+PY
+)
+
 ## Executed Checks
-$(for x in "${EXECUTED_CHECKS[@]:-}"; do echo "- $x"; done)
+$(for x in "${EXECUTED_CHECKS[@]}"; do echo "- $x"; done)
 MD
 
 log "Gate PASSED"
