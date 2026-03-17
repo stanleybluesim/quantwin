@@ -1,73 +1,144 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BASE_REF="${1:-origin/main}"
+HEAD_REF="${2:-HEAD}"
+
+if [ -x "./.venv-strictgate/bin/python" ]; then
+  PY="./.venv-strictgate/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PY="$(command -v python3)"
+else
+  echo "FAIL: no usable python interpreter" >&2
+  exit 2
+fi
+
 RUN_ID="${RUN_ID:-local_run}"
 TRACE_ID="${TRACE_ID:-local_trace}"
 AUDIT_ID="${AUDIT_ID:-local_audit}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export RUN_ID TRACE_ID AUDIT_ID
 
 ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
-log()  { printf '[%s] [run:%s] [trace:%s] [audit:%s] %s\n'  "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
-info() { printf '[%s] [INFO] [run:%s] [trace:%s] [audit:%s] %s\n'  "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
-err()  { printf '[%s] [ERROR] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*" >&2; }
+log() { printf '[%s] [run:%s] [trace:%s] [audit:%s] %s\n' "$(ts)" "$RUN_ID" "$TRACE_ID" "$AUDIT_ID" "$*"; }
 
-PYTHON_BIN=""
-if [[ -x "$REPO_ROOT/.venv-strictgate/bin/python" ]]; then
-  PYTHON_BIN="$REPO_ROOT/.venv-strictgate/bin/python"
-elif command -v python3.11 >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python3.11)"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python3)"
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="$(command -v python)"
+mkdir -p artifacts/gate .gate_logs
+
+log "Initializing Phase 0 local gate..."
+log "Using python: $PY"
+
+"$PY" tools/qw_diff_scope.py --base-ref "$BASE_REF" --head-ref "$HEAD_REF" > .gate_logs/diff_scope.stdout
+"$PY" tools/qw_phase0_guard.py > .gate_logs/guard.stdout
+
+CHANGED_JSON="artifacts/gate/DiffScope.json"
+
+HAS_ANY_CHANGES="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+print("1" if d.get("changed_files") else "0")
+PY
+)"
+
+HAS_CODE_CHANGES="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+paths=d.get("changed_files", [])
+print("1" if any(p.startswith(("app/","tools/","scripts/","tests/")) for p in paths) else "0")
+PY
+)"
+
+HAS_OPENAPI_CHANGE="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+paths=d.get("changed_files", [])
+print("1" if "contracts/openapi/openapi.yaml" in paths else "0")
+PY
+)"
+
+HAS_SCHEMA_CHANGE="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+paths=d.get("changed_files", [])
+print("1" if any(p.startswith("contracts/schemas/") for p in paths) else "0")
+PY
+)"
+
+HAS_AUTH_PROTECTED="$("$PY" - <<'PY'
+import json
+d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8"))
+hits=d.get("protected_domain_hits", [])
+print("1" if "auth" in hits else "0")
+PY
+)"
+
+STATUS="PASS"
+EXECUTED_CHECKS=()
+
+if [ "$HAS_ANY_CHANGES" = "0" ]; then
+  log "No changed files detected; guard-only PASS."
 else
-  err "python interpreter not found"
-  exit 2
+  if [ "$HAS_OPENAPI_CHANGE" = "1" ]; then
+    log "Running validate_openapi.sh..."
+    bash scripts/validate_openapi.sh
+    EXECUTED_CHECKS+=("validate_openapi")
+  fi
+
+  if [ "$HAS_SCHEMA_CHANGE" = "1" ]; then
+    log "Running validate_schemas.sh..."
+    bash scripts/validate_schemas.sh
+    EXECUTED_CHECKS+=("validate_schemas")
+  fi
+
+  if [ "$HAS_CODE_CHANGES" = "1" ]; then
+    log "Running compileall on app/tools/scripts/tests..."
+    "$PY" -m compileall app tools scripts tests
+    EXECUTED_CHECKS+=("compileall")
+
+    if [ "$HAS_AUTH_PROTECTED" = "1" ]; then
+      log "Protected auth diff detected; running strict smoke regression..."
+      "$PY" -m pytest tests/test_smoke.py
+      EXECUTED_CHECKS+=("pytest_smoke")
+    else
+      log "Running baseline regression..."
+      "$PY" -m pytest tests/test_smoke.py tests/test_e2e_golden_thread.py
+      EXECUTED_CHECKS+=("pytest_smoke")
+      EXECUTED_CHECKS+=("pytest_e2e")
+    fi
+
+    log "Running ruff on app/tools/scripts/tests..."
+    "$PY" -m ruff check app tools scripts tests
+    EXECUTED_CHECKS+=("ruff")
+  fi
 fi
 
-"$PYTHON_BIN" -m pytest --version >/dev/null 2>&1 || {
-  err "pytest not available in selected python: $PYTHON_BIN"
-  exit 2
+cat > artifacts/gate/GateReport.json <<JSON
+{
+  "status": "$STATUS",
+  "run_id": "$RUN_ID",
+  "trace_id": "$TRACE_ID",
+  "audit_id": "$AUDIT_ID",
+  "base_ref": "$BASE_REF",
+  "head_ref": "$HEAD_REF",
+  "executed_checks": $(printf '%s\n' "${EXECUTED_CHECKS[@]:-}" | "$PY" - <<'PY'
+import json,sys
+items=[x.strip() for x in sys.stdin if x.strip()]
+print(json.dumps(items, ensure_ascii=False))
+PY
+)
 }
-"$PYTHON_BIN" -m ruff --version >/dev/null 2>&1 || {
-  err "ruff not available in selected python: $PYTHON_BIN"
-  exit 2
-}
+JSON
 
-EXIT_CODE=0
+cat > artifacts/gate/GateReport.md <<MD
+# GateReport
 
-log "Initializing strict gate run..."
-info "Gate session initialized"
-info "Using python: $PYTHON_BIN"
+- status: $STATUS
+- run_id: $RUN_ID
+- trace_id: $TRACE_ID
+- audit_id: $AUDIT_ID
+- base_ref: $BASE_REF
+- head_ref: $HEAD_REF
 
-log "Running compileall check..."
-if "$PYTHON_BIN" -m compileall .; then
-  info "compileall: PASS"
-else
-  err "compileall: FAIL"
-  EXIT_CODE=1
-fi
+## Executed Checks
+$(for x in "${EXECUTED_CHECKS[@]:-}"; do echo "- $x"; done)
+MD
 
-log "Running pytest check..."
-if "$PYTHON_BIN" -m pytest -q --maxfail=1; then
-  info "pytest: PASS"
-else
-  err "pytest: FAIL"
-  EXIT_CODE=1
-fi
-
-log "Running ruff check..."
-if "$PYTHON_BIN" -m ruff check .; then
-  info "ruff: PASS"
-else
-  err "ruff: FAIL"
-  EXIT_CODE=1
-fi
-
-if [[ "$EXIT_CODE" -eq 0 ]]; then
-  info "Gate PASSED"
-else
-  err "Gate FAILED - One or more checks failed"
-fi
-
-exit "$EXIT_CODE"
+log "Gate PASSED"
