@@ -21,6 +21,7 @@ ChatGPT MUST NOT 直接承担：
 ### Required fields
 - task_id
 - trace_id
+- run_id
 - audit_id
 - task_type
 - title
@@ -41,6 +42,7 @@ ChatGPT MUST NOT 直接承担：
 ### Required fields
 - task_id
 - trace_id
+- run_id
 - audit_id
 - status
 - summary
@@ -65,6 +67,8 @@ ChatGPT MUST NOT 直接承担：
 
 ## Idempotency
 - `task_id + target_branch` MUST 视为同一逻辑任务。
+- 若 task / result 通过异步 handoff 传递，则 MUST 经 FastStream 已登记 Topic 交换。
+- 若 task / result 通过异步 handoff 传递，则每条消息 MUST 包含 `idempotency_key`。
 - 同一逻辑任务重复提交时，结果 MUST 保持可比较，不得无故漂移。
 
 ## Timeout
@@ -73,7 +77,9 @@ ChatGPT MUST NOT 直接承担：
 - 超时后的重试 SHOULD 由上层编排器控制，不由本契约自动隐式重试。
 
 ## MUST rules
-- task_id / trace_id / audit_id MUST 在 task/result 中保持一致。
+- task_id / trace_id / run_id / audit_id MUST 在 task/result 中保持一致。
+- `execution_policy.egress_mode` MUST 使用 `offline` 或 `allowlist`，默认值 MUST 为 `offline`。
+- 本 runbook 仅定义 devloop 工程治理层工件，不得直接修改线上当前生效策略状态。
 - ChatGPT MUST 输出 self_check。
 - ChatGPT MUST 输出 rollback。
 - ChatGPT MUST NOT 声称修改了 changes 中不存在的文件。

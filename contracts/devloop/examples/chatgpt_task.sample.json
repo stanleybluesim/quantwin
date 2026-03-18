@@ -7,7 +7,7 @@
   "objective": "Create formal task and result contracts for ChatGPT specialist execution in the DevLoop.",
   "repository": "stanleybluesim/quantwin",
   "base_branch": "main",
-  "target_branch": "feat/devloop-chatgpt-specialist-node",
+  "target_branch": "fix/devloop-chatgpt-c7-boundary",
   "origin_provider": "qwen-portal",
   "escalation_reason": "ARCHITECTURE_COMPLEXITY",
   "inputs": {
@@ -58,10 +58,11 @@
     ]
   },
   "execution_policy": {
-    "allow_network": false,
     "allow_destructive_changes": false,
     "require_self_check": true,
     "require_rollback_note": true,
-    "timeout_sec": 900
-  }
+    "timeout_sec": 900,
+    "egress_mode": "offline"
+  },
+  "run_id": "run_chatgpt_specialist_001"
 }
