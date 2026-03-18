@@ -1,0 +1,60 @@
+{
+  "task_id": "task_chatgpt_specialist_001",
+  "trace_id": "trace_chatgpt_specialist_001",
+  "audit_id": "audit_chatgpt_specialist_001",
+  "status": "SUCCESS",
+  "summary": "Formalized ChatGPT as a specialist execution node with explicit task/result contracts and Qwen-to-ChatGPT escalation rules.",
+  "files_touched": [
+    "contracts/devloop/chatgpt_task.schema.json",
+    "contracts/devloop/chatgpt_result.schema.json",
+    "contracts/devloop/examples/chatgpt_task.sample.json",
+    "contracts/devloop/examples/chatgpt_result.sample.json",
+    "docs/process/ChatGPTRunbook.md",
+    "docs/process/QwenChatGPTEscalationPolicy.md"
+  ],
+  "changes": [
+    {
+      "path": "contracts/devloop/chatgpt_task.schema.json",
+      "action": "create",
+      "rationale": "Define the structured task envelope for ChatGPT specialist execution."
+    },
+    {
+      "path": "contracts/devloop/chatgpt_result.schema.json",
+      "action": "create",
+      "rationale": "Define the structured result envelope returned by ChatGPT."
+    },
+    {
+      "path": "docs/process/ChatGPTRunbook.md",
+      "action": "create",
+      "rationale": "Document required fields, timeout, idempotency, error semantics, and rollback."
+    },
+    {
+      "path": "docs/process/QwenChatGPTEscalationPolicy.md",
+      "action": "create",
+      "rationale": "Document when Qwen MUST escalate to ChatGPT."
+    }
+  ],
+  "commands_to_run": [
+    "python3 - <<'PY' ... validate chatgpt_task schema ... PY",
+    "python3 - <<'PY' ... validate chatgpt_result schema ... PY"
+  ],
+  "self_check": {
+    "checks": [
+      "Task sample validates against chatgpt_task.schema.json.",
+      "Result sample validates against chatgpt_result.schema.json.",
+      "Runbook defines BLOCKED, ERROR, SUCCESS semantics.",
+      "Escalation policy aligns Qwen bootstrap with ChatGPT specialist routing."
+    ]
+  },
+  "rollback": {
+    "steps": [
+      "git checkout -- contracts/devloop/chatgpt_task.schema.json",
+      "git checkout -- contracts/devloop/chatgpt_result.schema.json",
+      "git checkout -- contracts/devloop/examples/chatgpt_task.sample.json",
+      "git checkout -- contracts/devloop/examples/chatgpt_result.sample.json",
+      "git checkout -- docs/process/ChatGPTRunbook.md",
+      "git checkout -- docs/process/QwenChatGPTEscalationPolicy.md"
+    ]
+  },
+  "generated_at": "2026-03-12T00:00:00Z"
+}

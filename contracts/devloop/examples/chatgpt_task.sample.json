@@ -1,0 +1,67 @@
+{
+  "task_id": "task_chatgpt_specialist_001",
+  "trace_id": "trace_chatgpt_specialist_001",
+  "audit_id": "audit_chatgpt_specialist_001",
+  "task_type": "architecture",
+  "title": "Formalize ChatGPT as specialist execution node",
+  "objective": "Create formal task and result contracts for ChatGPT specialist execution in the DevLoop.",
+  "repository": "stanleybluesim/quantwin",
+  "base_branch": "main",
+  "target_branch": "feat/devloop-chatgpt-specialist-node",
+  "origin_provider": "qwen-portal",
+  "escalation_reason": "ARCHITECTURE_COMPLEXITY",
+  "inputs": {
+    "spec_refs": [
+      "contracts/devloop/model_routing.schema.json",
+      "docs/process/QwenBootstrapRunbook.md",
+      "docs/process/ModelRoutingPolicy.md"
+    ],
+    "context_notes": [
+      "Qwen is the bootstrap provider.",
+      "ChatGPT is the specialist execution node for architecture and deep implementation.",
+      "Result MUST include self_check and rollback."
+    ],
+    "changed_files_hint": [
+      "contracts/devloop/chatgpt_task.schema.json",
+      "contracts/devloop/chatgpt_result.schema.json",
+      "docs/process/ChatGPTRunbook.md",
+      "docs/process/QwenChatGPTEscalationPolicy.md"
+    ]
+  },
+  "constraints": {
+    "must_not_touch": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/dev-gate.yml",
+      ".github/workflows/auto-merge-on-green.yml"
+    ],
+    "must_follow": [
+      "Preserve task_id, trace_id, audit_id across task and result.",
+      "Do not claim SUCCESS if the task is blocked.",
+      "Keep sample outputs schema-valid and versionable."
+    ]
+  },
+  "requested_outputs": {
+    "expected_files": [
+      "contracts/devloop/chatgpt_task.schema.json",
+      "contracts/devloop/chatgpt_result.schema.json",
+      "contracts/devloop/examples/chatgpt_task.sample.json",
+      "contracts/devloop/examples/chatgpt_result.sample.json",
+      "docs/process/ChatGPTRunbook.md",
+      "docs/process/QwenChatGPTEscalationPolicy.md"
+    ],
+    "must_include_sections": [
+      "summary",
+      "files_touched",
+      "commands_to_run",
+      "self_check",
+      "rollback"
+    ]
+  },
+  "execution_policy": {
+    "allow_network": false,
+    "allow_destructive_changes": false,
+    "require_self_check": true,
+    "require_rollback_note": true,
+    "timeout_sec": 900
+  }
+}

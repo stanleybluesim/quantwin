@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantwin/contracts/devloop/chatgpt_task.schema.json",
+  "title": "ChatGPT Specialist Task Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "trace_id",
+    "audit_id",
+    "task_type",
+    "title",
+    "objective",
+    "repository",
+    "base_branch",
+    "target_branch",
+    "origin_provider",
+    "escalation_reason",
+    "inputs",
+    "constraints",
+    "requested_outputs",
+    "execution_policy"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audit_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "architecture",
+        "deep_implementation",
+        "spec_rewrite",
+        "complex_reasoning",
+        "docs",
+        "review_fix"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_branch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_branch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "origin_provider": {
+      "type": "string",
+      "enum": ["qwen-portal", "manual", "system"]
+    },
+    "escalation_reason": {
+      "type": "string",
+      "enum": [
+        "ARCHITECTURE_COMPLEXITY",
+        "DEEP_IMPLEMENTATION_REQUIRED",
+        "SPEC_REWRITE_REQUIRED",
+        "COMPLEX_REASONING_REQUIRED",
+        "PROVIDER_UNAVAILABLE",
+        "MANUAL_OVERRIDE"
+      ]
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spec_refs",
+        "context_notes",
+        "changed_files_hint"
+      ],
+      "properties": {
+        "spec_refs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "context_notes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "changed_files_hint": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_not_touch", "must_follow"],
+      "properties": {
+        "must_not_touch": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "must_follow": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "requested_outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_files", "must_include_sections"],
+      "properties": {
+        "expected_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "must_include_sections": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "execution_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allow_network",
+        "allow_destructive_changes",
+        "require_self_check",
+        "require_rollback_note",
+        "timeout_sec"
+      ],
+      "properties": {
+        "allow_network": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_destructive_changes": {
+          "type": "boolean",
+          "default": false
+        },
+        "require_self_check": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_rollback_note": {
+          "type": "boolean",
+          "default": true
+        },
+        "timeout_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 900
+        }
+      }
+    }
+  }
+}
