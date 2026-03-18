@@ -40,9 +40,16 @@
 升级到 ChatGPT 时，MUST 保留：
 - task_id
 - trace_id
+- run_id
 - audit_id
 - origin_provider=qwen-portal
 - escalation_reason
+
+## Transport and egress boundary
+- 若升级通过异步 handoff 传递，MUST 经 FastStream 已登记 Topic 完成。
+- 若升级通过异步 handoff 传递，每条消息 MUST 包含 `idempotency_key`。
+- `execution_policy.egress_mode` MUST 为 `offline` 或 `allowlist`，默认 MUST 为 `offline`。
+- 升级到 ChatGPT specialist 不得等同于运行时策略生效动作，不得直接修改线上当前生效策略状态。
 
 ## Audit requirement
 所有升级动作 MUST 形成可审计记录，并可由上层 OpenClaw 编排器回溯。

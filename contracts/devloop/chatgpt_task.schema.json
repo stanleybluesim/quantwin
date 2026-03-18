@@ -7,6 +7,7 @@
   "required": [
     "task_id",
     "trace_id",
+    "run_id",
     "audit_id",
     "task_type",
     "title",
@@ -67,7 +68,11 @@
     },
     "origin_provider": {
       "type": "string",
-      "enum": ["qwen-portal", "manual", "system"]
+      "enum": [
+        "qwen-portal",
+        "manual",
+        "system"
+      ]
     },
     "escalation_reason": {
       "type": "string",
@@ -91,45 +96,72 @@
       "properties": {
         "spec_refs": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "context_notes": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "changed_files_hint": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "constraints": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["must_not_touch", "must_follow"],
+      "required": [
+        "must_not_touch",
+        "must_follow"
+      ],
       "properties": {
         "must_not_touch": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "must_follow": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "requested_outputs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["expected_files", "must_include_sections"],
+      "required": [
+        "expected_files",
+        "must_include_sections"
+      ],
       "properties": {
         "expected_files": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "must_include_sections": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -137,17 +169,13 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "allow_network",
+        "egress_mode",
         "allow_destructive_changes",
         "require_self_check",
         "require_rollback_note",
         "timeout_sec"
       ],
       "properties": {
-        "allow_network": {
-          "type": "boolean",
-          "default": false
-        },
         "allow_destructive_changes": {
           "type": "boolean",
           "default": false
@@ -164,8 +192,20 @@
           "type": "integer",
           "minimum": 1,
           "default": 900
+        },
+        "egress_mode": {
+          "type": "string",
+          "enum": [
+            "offline",
+            "allowlist"
+          ],
+          "default": "offline"
         }
       }
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }
