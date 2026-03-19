@@ -6,7 +6,7 @@
 ## Default Routing
 - bootstrap/classify/quick_plan/shell_guidance -> qwen-portal
 - architecture/deep_implementation/spec_rewrite/complex_reasoning -> chatgpt-openai
-- independent_review -> grok-review
+- independent_review -> qwen-review-3.5
 - merge_decision -> github-control-plane
 
 ## Timeouts / Retries
