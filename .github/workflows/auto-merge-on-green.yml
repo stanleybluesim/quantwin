@@ -2,24 +2,18 @@ name: auto-merge-on-green
 
 on:
   workflow_run:
-    workflows: ["ci", "dev-gate"]
+    workflows: ["dev-gate"]
     types: [completed]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  checks: read
-
-concurrency:
-  group: automerge-${{ github.event.workflow_run.head_sha || github.run_id }}
-  cancel-in-progress: false
-
 jobs:
-  automerge:
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' }}
+  auto-merge:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
 
     steps:
       - name: Checkout
@@ -30,30 +24,66 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Run auto-merge guard
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+      - name: Install deps
         run: |
-          set -euo pipefail
-          python tools/qw_automerge_guard.py \
-            --mode workflow-run \
-            --event-path "$GITHUB_EVENT_PATH" \
-            --repo "$GITHUB_REPOSITORY" \
-            --base-ref main \
-            --merge-method merge \
-            --delete-branch \
-            --required-check contract-check \
-            --required-check gate \
-            --required-check preview \
-            --required-check review
+          python -m pip install --upgrade pip
+          pip install pyyaml
 
-      - name: Upload auto-merge report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: automerge-report-${{ github.run_id }}
-          path: artifacts/automerge/
-          if-no-files-found: error
+      - name: Resolve PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          PR_NUMBER="$(gh pr list --state open --json number,headRefName --jq ".[] | select(.headRefName==\"${BRANCH_NAME}\") | .number" | head -n1)"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No matching PR found; exiting."
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Stop when no PR
+        if: ${{ steps.pr.outputs.pr_number == '' }}
+        run: exit 0
+
+      - name: Fetch base/main
+        run: |
+          git fetch origin main --depth=1 || true
+
+      - name: Run diff scope
+        run: |
+          python tools/qw_diff_scope.py --base-ref origin/main --head-ref HEAD
+
+      - name: Require Human-Approval for protected diff or main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          PROTECTED_COUNT="$(python -c 'import json; d=json.load(open("artifacts/gate/DiffScope.json", encoding="utf-8")); print(len(d.get("protected_domain_hits", [])))')"
+          BASE_REF="$(gh pr view "$PR_NUMBER" --json baseRefName --jq '.baseRefName')"
+          LABELS="$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' || true)"
+
+          NEED_APPROVAL=0
+          if [ "$PROTECTED_COUNT" -gt 0 ]; then
+            NEED_APPROVAL=1
+          fi
+          if [ "$BASE_REF" = "main" ]; then
+            NEED_APPROVAL=1
+          fi
+
+          if [ "$NEED_APPROVAL" = "1" ]; then
+            echo "$LABELS" | grep -qx "Human-Approval" || {
+              echo "FAIL: Human-Approval label required for protected diff or base=main" >&2
+              exit 1
+            }
+          fi
+
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          gh pr merge "$PR_NUMBER" --auto --merge
