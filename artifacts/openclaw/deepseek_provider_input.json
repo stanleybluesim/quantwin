@@ -1,0 +1,13 @@
+{
+  "provider_strategy": "custom_openai_compatible",
+  "base_url_primary": "https://api.deepseek.com",
+  "base_url_provider": "https://api.deepseek.com/v1",
+  "target_family": "DeepSeek V3.2",
+  "model_id": "deepseek-chat",
+  "enable_v4": false,
+  "notes": [
+    "Keep qwen-portal as current worker/bootstrap baseline.",
+    "Do not switch primary model in this change.",
+    "Use DeepSeek only as secondary provider in this phase."
+  ]
+}
