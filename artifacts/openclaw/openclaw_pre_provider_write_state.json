@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-03-19T05:08:12.151279Z",
+  "config_path": "/Users/stanleyclaw/.openclaw/openclaw.json",
+  "providers_keys": [
+    "qwen-portal"
+  ],
+  "auth_profiles": [
+    "qwen-portal:default"
+  ],
+  "primary_model": "qwen-portal/coder-model",
+  "env": {
+    "QWEN_API_KEY": "SET",
+    "DEEPSEEK_API_KEY": "SET"
+  }
+}

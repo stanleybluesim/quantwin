@@ -1,0 +1,14 @@
+Agents:
+- main (default)
+  Workspace: ~/.openclaw/workspace
+  Agent dir: ~/.openclaw/agents/main/agent
+  Model: qwen-portal/coder-model
+  Routing rules: 0
+  Routing: default (no explicit rules)
+- canary-deepseek-v32
+  Workspace: ~/openclaw-workspaces/canary-deepseek-v32
+  Agent dir: ~/.openclaw/agents/canary-deepseek-v32/agent
+  Model: deepseek-v32/deepseek-chat
+  Routing rules: 0
+Routing rules map channel/account/peer to an agent. Use --bindings for full rules.
+Channel status reflects local config/creds. For live health: openclaw channels status --probe.
