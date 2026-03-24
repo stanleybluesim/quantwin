@@ -160,7 +160,14 @@ Mapped files:
 ## 7. Final Traceability Statement
 This artifact records topic-level traceability for the devloop ChatGPT/Qwen specialist subtopic.
 
-It is sufficient to support the topic-level formal acceptance statement together with:
+Together with:
 - DevloopSpecialistValidationReport.md
+- artifacts/devloop/evidence/
 
-It is not a claim that all IDs above are already globally registered in the project registry.
+it is sufficient to support the topic-level formal acceptance review package.
+
+It does NOT by itself assert:
+- FORMALLY_ACCEPTED
+- globally registered Traceability IDs
+- QuantWin full-repo acceptance
+- runtime current-live state change
