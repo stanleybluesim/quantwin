@@ -10,10 +10,12 @@
 
 ## 2. Current Status
 - Engineering closure: COMPLETED
-- Formal acceptance: PENDING
+- Review readiness: FORMAL_ACCEPTANCE_REVIEW_READY
+- Formal acceptance: NOT ASSERTED
 - Reason:
-  - Validation record is being landed by this artifact
-  - Traceability artifact is being landed by this artifact set
+  - Validation record is landed by this artifact
+  - Traceability artifact is landed by the paired artifact
+  - Evidence pack is landed under artifacts/devloop/evidence/
 
 ## 3. Evidence Baseline
 - PR #24 merged into main
@@ -102,4 +104,18 @@ Current NOT asserted here:
 ## 6. Formal Status Statement
 Status:
 - Engineering closure completed
-- After this validation record and the paired traceability artifact are landed, this subtopic can be marked as formally accepted
+- Review readiness: FORMAL_ACCEPTANCE_REVIEW_READY
+- Formal acceptance: NOT ASSERTED
+
+This artifact package establishes:
+- topic-level validation record
+- boundary evidence record
+- C-7 alignment record
+- git/PR closure record
+- evidence package for formal acceptance review
+
+This artifact package does NOT assert:
+- FORMALLY_ACCEPTED
+- QuantWin full-repo acceptance
+- AEF Phase 0 full-domain acceptance
+- runtime current-live state changed
