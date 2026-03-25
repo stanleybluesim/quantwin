@@ -1,0 +1,71 @@
+policy_id: AEF-RG-TTL-001
+policy_version: v1
+task_id: WP-P1-3
+task_name: 回归护栏与 TTL / registry integrity 固化
+scope_layer: AEF_ENGINEERING_GOV
+
+owners:
+  owner: "DEV / QA / SRE"
+  accountable_owner: "SRE"
+
+defaults:
+  ttl_days: 90
+  ttl_reset_on_ci_hit: true
+  archive_on_expire: true
+  delete_directly: false
+  quarter_end_cleanup: true
+  offline_first: true
+
+registry_integrity:
+  enabled: true
+  source_root: "tests/regressions"
+  index_mode: "document_contract_only"
+  required_case_fields:
+    - case_id
+    - introduced_by
+    - created_at
+    - ttl_days
+    - trace_id
+    - run_id
+    - audit_id
+    - cleanup_state
+  case_id_pattern: "^RG-[0-9]{4}$"
+  report_id_rule: "N/A unless report-export chain"
+  duplicate_case_id_fail: true
+  missing_c7_fail: true
+
+boundary:
+  aef_layer_only: true
+  runtime_publish_forbidden: true
+  faststream_only_for_async: true
+  topic_required: true
+  idempotency_key_required: true
+  artifact_change_publish_separation: true
+
+timeouts:
+  ttl_eval_timeout_sec: 10
+  integrity_eval_timeout_sec: 10
+
+retry:
+  ttl_eval_retry: 0
+  integrity_eval_retry: 0
+
+idempotency:
+  enabled: true
+  key_template: "sha256(scope_layer + policy_version + source_root)"
+
+errors:
+  - code: AEF-RG-001
+    name: MissingRegressionReadme
+  - code: AEF-RG-002
+    name: MissingRequiredCaseField
+  - code: AEF-RG-003
+    name: DuplicateCaseId
+  - code: AEF-RG-004
+    name: InvalidTTLValue
+  - code: AEF-RG-005
+    name: RegistryIntegrityViolation
+  - code: AEF-RG-006
+    name: MissingC7Fields
+  - code: AEF-RG-007
+    name: RuntimeBoundaryViolation
