@@ -1,0 +1,97 @@
+version: "1.0"
+task_id: "WP-P1-2"
+scope_layer: "AEF_ENGINEERING_GOVERNANCE"
+runtime_layer: "QUANTWIN_BUSINESS_RUNTIME"
+
+owners:
+  owner:
+    - "AR"
+    - "QA"
+    - "GOV"
+  accountable_owner: "GOV"
+
+entry_conditions:
+  - "Phase 0 completed"
+  - "Protected domain, runtime publish boundary, and FastStream-only async constraints must be encoded as executable gates"
+
+exit_conditions:
+  - "protected domain rules file landed"
+  - "boundary guard script landed"
+  - "gate matrix landed"
+  - "AEF direct mutation of current live runtime state explicitly blocked"
+
+protected_domains:
+  - "auth"
+  - "policy"
+  - "report"
+  - "audit"
+  - "sandbox"
+  - "deploy"
+
+boundary_contract:
+  aef_layer: "AEF = 工程治理层"
+  quantwin_layer: "QuantWin = 业务运行层"
+  async_transport: "FastStream"
+  async_topic_required: true
+  async_topic_pattern: "env.subsystem.event"
+  idempotency_key_required: true
+  artifact_change_publish_separation: true
+  forbid_direct_live_runtime_state_mutation: true
+  runtime_publish_endpoints:
+    - "POST /v1/policy/publish"
+    - "POST /v1/policy/rollback"
+
+c7:
+  required_cross_layer_fields:
+    - "trace_id"
+    - "run_id"
+    - "audit_id"
+  report_chain_only_fields:
+    - "report_id"
+
+egress:
+  runtime_default_policy: "offline-first"
+  allowed_modes:
+    - "offline"
+    - "allowlist"
+
+gates:
+  gate_0:
+    name: "Semgrep"
+    executable: true
+  gate_1:
+    name: "Architecture Contract"
+    executable: true
+  protected_domain_extra_checks:
+    - "C7 integrity"
+    - "boundary guard"
+    - "approval chain"
+    - "egress policy"
+
+timeouts:
+  boundary_guard_timeout_sec: 20
+  c7_check_timeout_sec: 10
+  egress_check_timeout_sec: 5
+
+retry_policy:
+  runtime_publish_max_retries: 3
+  audit_write_max_retries: 3
+  c7_gate_retry: 0
+
+idempotency:
+  async_messages_must_have_idempotency_key: true
+
+error_codes:
+  AEF_QW_001: "SoTConflictDetected"
+  AEF_QW_002: "MissingC7Fields"
+  AEF_QW_003: "RuntimePolicyBypassForbidden"
+  AEF_QW_004: "BoundaryViolation"
+  AEF_QW_005: "ProtectedDomainInsufficientGates"
+  AEF_QW_006: "EgressPolicyViolation"
+  AEF_QW_007: "DuplicateRuntimeFieldOwner"
+
+non_extrapolation:
+  - "not runtime governance chain replaced"
+  - "not runtime publish chain taken over by AEF"
+  - "not current live runtime state switched"
+  - "not formal acceptance complete"
