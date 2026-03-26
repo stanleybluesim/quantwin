@@ -164,7 +164,7 @@ Together with:
 - DevloopSpecialistValidationReport.md
 - artifacts/devloop/evidence/
 
-it is sufficient to support the topic-level formal acceptance review package.
+it is sufficient to support the topic-level FORMAL_ACCEPTANCE_REVIEW_READY review package under the current locked SoT.
 
 It does NOT by itself assert:
 - FORMALLY_ACCEPTED
