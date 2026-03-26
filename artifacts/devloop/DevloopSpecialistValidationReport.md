@@ -7,6 +7,7 @@
   - MUST NOT reopen AEF Phase 0
   - MUST NOT flow back into PR #23
   - MUST NOT expand to QuantWin full-repo acceptance
+  - MUST NOT be interpreted as runtime current-live state changed
 
 ## 2. Current Status
 - Engineering closure: COMPLETED
@@ -23,9 +24,7 @@
 - main aligned with origin/main
 - local feature branches cleaned
 - remote feature branches cleaned
-- local untracked helper files remain isolated:
-  - .backup/
-  - tools/qw_devloop_topic_pack.py
+- evidence pack available under artifacts/devloop/evidence/
 
 ## 4. Validation Items
 
@@ -37,6 +36,9 @@ Checked objects:
 - contracts/devloop/chatgpt_task.schema.json
 - contracts/devloop/examples/chatgpt_result.sample.json
 - contracts/devloop/examples/chatgpt_task.sample.json
+
+Evidence:
+- artifacts/devloop/evidence/06_schema_sample_check.txt
 
 Result:
 - task/result schema and sample set were checked during topic closure flow
@@ -51,9 +53,15 @@ Checked rules:
 - async handoff requires idempotency_key
 - runtime-state change must not be directly performed by AEF
 - topic remains in engineering-governance layer, not QuantWin runtime mainline
+- execution_policy.egress_mode MUST remain offline or allowlist
+- execution_policy.egress_mode default MUST remain offline
+
+Evidence:
+- artifacts/devloop/evidence/07_async_boundary_check.txt
+- artifacts/devloop/evidence/08_egress_runtime_boundary_check.txt
 
 Result:
-- ChatGPTRunbook and QwenChatGPTEscalationPolicy now include:
+- ChatGPTRunbook and QwenChatGPTEscalationPolicy include:
   - FastStream
   - Topic
   - idempotency_key
@@ -63,17 +71,24 @@ Result:
 ### VAL-003 C-7 field alignment
 Status: PASS
 
-Checked fields:
+Checked fields / policy:
 - trace_id
 - run_id
 - audit_id
+- report_id policy
+
+Evidence:
+- artifacts/devloop/evidence/00_c7_context.json
+- artifacts/devloop/evidence/09_as_mapping_matrix.md
 
 Result:
-- run_id was added to task/result schema and sample set
-- current specialist task/result artifacts satisfy the minimum C-7 alignment expected for this subtopic
+- current specialist task/result artifacts preserve the minimum C-7 alignment for this subtopic
+- trace_id / run_id / audit_id are covered by the current topic pack
+- report_id is report-chain specific; for this topic pack the policy is N/A unless report-chain evidence is included
 
-Note:
-- report_id is report-chain specific and is not asserted as mandatory for these two devloop specialist envelopes
+Constraint:
+- any user-visible or cross-layer artifact in this topic pack MUST remain traceable
+- this topic pack MUST NOT fabricate a report-chain report_id
 
 ### VAL-004 git / PR closure
 Status: PASS
@@ -87,6 +102,28 @@ Checked items:
 - no reopen of Phase 0
 - no flow-back into PR #23
 
+Evidence:
+- artifacts/devloop/evidence/01_pr24_view.json
+- artifacts/devloop/evidence/02_pr25_view.json
+- artifacts/devloop/evidence/03_git_status_short.txt
+- artifacts/devloop/evidence/04_git_branch_local.txt
+- artifacts/devloop/evidence/05_git_branch_remote.txt
+
+### VAL-005 AS formal-structure mapping
+Status: PASS
+
+Mapped structures:
+- Traceability Matrix
+- Metric Specifications
+- Test Specifications & Gates
+
+Evidence:
+- artifacts/devloop/evidence/09_as_mapping_matrix.md
+
+Result:
+- the current review package includes explicit mapping evidence
+- current topic-level validation wording is aligned to the formal structure required by the locked SoT
+
 ## 5. Final Validation Conclusion
 This subtopic has completed engineering closure.
 
@@ -95,11 +132,13 @@ Current PASS scope:
 - boundary validation record established
 - C-7 minimum alignment recorded
 - git/PR closure recorded
+- AS formal-structure mapping recorded
 
 Current NOT asserted here:
 - QuantWin full-repo acceptance
 - AEF Phase 0 full-domain acceptance
 - any later topic acceptance
+- runtime current-live state changed
 
 ## 6. Formal Status Statement
 Status:
@@ -112,10 +151,14 @@ This artifact package establishes:
 - boundary evidence record
 - C-7 alignment record
 - git/PR closure record
-- evidence package for formal acceptance review
+- AS formal-structure mapping record
+- review-package evidence index
+
+This artifact package supports the current locked-SoT review-ready package only.
 
 This artifact package does NOT assert:
 - FORMALLY_ACCEPTED
+- formal acceptance completed
 - QuantWin full-repo acceptance
 - AEF Phase 0 full-domain acceptance
 - runtime current-live state changed
