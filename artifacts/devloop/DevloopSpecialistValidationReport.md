@@ -13,9 +13,9 @@
 - Review readiness: FORMAL_ACCEPTANCE_REVIEW_READY
 - Formal acceptance: NOT ASSERTED
 - Reason:
-  - Validation record is landed by this artifact
-  - Traceability artifact is landed by the paired artifact
-  - Evidence pack is landed under artifacts/devloop/evidence/
+  - Validation record is included in the current review package
+  - Traceability artifact is included in the paired review package
+  - Evidence pack is included in the current review package under artifacts/devloop/evidence/
 
 ## 3. Evidence Baseline
 - PR #24 merged into main
