@@ -1,0 +1,33 @@
+contract_id: FS-IDEMP-001
+contract_version: v1
+
+topic: dev.quantwin.faststream.idempotency_check
+
+idempotency_key:
+  required: true
+  same_request_rule: "same topic + same idempotency_key = same logical request"
+  duplicate_side_effect: forbidden
+
+trace_id:
+  required: true
+run_id:
+  required: true
+audit_id:
+  required: true
+
+report_id_policy: "N/A unless report-chain evidence is included"
+formal_acceptance: NOT_ASSERTED
+runtime_publish_state: NOT_ASSERTED
+egress_mode: offline
+retry_policy: no_automatic_retry
+timeout_policy: fail_closed_on_command_timeout
+async_semantics: no_acceptance_async_job
+
+error_codes:
+  FS-TOPIC-001: TOPIC_NOT_REGISTERED
+  FS-IDEMP-001: IDEMPOTENCY_KEY_MISSING
+  FS-IDEMP-002: IDEMPOTENCY_DUPLICATE_DETECTED
+  FS-TRACE-001: TRACEABILITY_FIELDS_MISSING
+  FS-RUNTIME-001: RUNTIME_PUBLISH_FORBIDDEN_IN_CURRENT_STAGE
+  FS-VAL-001: CONTRACT_VALIDATION_FAILED
+  FS-GATE-001: STATIC_GATE_FAILED

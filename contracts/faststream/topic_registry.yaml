@@ -1,0 +1,22 @@
+registry_id: FS-TOPIC-REG-001
+registry_version: v1
+transport: FastStream
+Scope: WP-P1-4
+Output Path: src/infrastructure/messaging/faststream_impl/
+formal_acceptance: NOT_ASSERTED
+runtime_publish_state: NOT_ASSERTED
+egress_mode: offline
+
+topics:
+  - topic_id: FS-TOPIC-001
+    topic: dev.quantwin.faststream.idempotency_check
+    registered: true
+    transport: FastStream
+    producer_scope: src/infrastructure/messaging/faststream_impl/
+    consumer_scope: src/infrastructure/messaging/faststream_impl/
+    idempotency_required: true
+    required_trace_fields:
+      - trace_id
+      - run_id
+      - audit_id
+    report_id_policy: "N/A unless report-chain evidence is included"
