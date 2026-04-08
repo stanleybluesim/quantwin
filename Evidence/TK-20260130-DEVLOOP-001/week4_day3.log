@@ -1,0 +1,25 @@
+==> validate docs
+==> validate docs
+OK: manifest files exist + sha256/size match
+OK: SpecIndex references baseline specs
+OK: docs validate
+week4_day3 SAFE: will NOT overwrite app/*.py
+Need the generator? Run: bash scripts/week4_day3_apply.sh
+==> validate docs
+==> validate docs
+OK: manifest files exist + sha256/size match
+OK: SpecIndex references baseline specs
+OK: docs validate
+==> validate openapi
+OK: bundled -> /tmp/openapi.bundled.yaml
+==> validate schemas
+ok -- validation done
+ok -- validation done
+ok -- validation done
+ok -- validation done
+ok -- validation done
+OK: schemas validate examples
+==> run tests
+......                                                                   [100%]
+6 passed in 3.88s
+OK: preflight passed
