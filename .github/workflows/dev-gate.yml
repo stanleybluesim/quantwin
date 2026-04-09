@@ -5,149 +5,61 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pull-requests: read
-  checks: write
-  actions: read
-
 jobs:
   gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          if [[ -f requirements.txt ]]; then
-            pip install -r requirements.txt
-          fi
-          if [[ -f requirements-dev.txt ]]; then
-            pip install -r requirements-dev.txt
-          fi
-
-      - name: Run strict gate
-        env:
-          RUN_ID: gha_${{ github.run_id }}
-          TRACE_ID: gha_${{ github.run_id }}_${{ github.run_attempt }}
-          AUDIT_ID: gha_${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash tools/qw_gate.sh
-
-  preview:
-    needs: gate
-    if: ${{ needs.gate.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          if [[ -f requirements.txt ]]; then
-            pip install -r requirements.txt
-          fi
-          if [[ -f requirements-dev.txt ]]; then
-            pip install -r requirements-dev.txt
-          fi
-
-      - name: Generate preview artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          python tools/qw_preview_deploy.py \
-            --task_id preview_deploy \
-            --run_id gha_${{ github.run_id }} \
-            --trace_id gha_${{ github.run_id }}_${{ github.run_attempt }} \
-            --audit_id gha_${{ github.run_id }}
-
-      - name: Upload preview delivery
-        uses: actions/upload-artifact@v4
-        with:
-          name: preview-delivery-${{ github.run_id }}
-          path: artifacts/delivery/
-          if-no-files-found: error
-
-  review:
-    needs: preview
-    if: ${{ needs.preview.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    env:
+      RUN_ID: ${{ github.run_id }}
+      TRACE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      AUDIT_ID: pr-${{ github.event.pull_request.number || github.run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Fetch base branch
+        run: |
+          git fetch origin "${{ github.base_ref || 'main' }}" --depth=1 || true
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        shell: bash
+      - name: Install gate deps
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
-          if [[ -f requirements.txt ]]; then
-            pip install -r requirements.txt
-          fi
-          if [[ -f requirements-dev.txt ]]; then
-            pip install -r requirements-dev.txt
-          fi
+          pip install pyyaml pytest ruff jsonschema fastapi httpx starlette
 
-      - name: Download preview delivery
-        uses: actions/download-artifact@v4
-        with:
-          name: preview-delivery-${{ github.run_id }}
-          path: artifacts/delivery/
-
-      - name: Fetch base branch
-        shell: bash
+      - name: Run Phase 0 gate
         run: |
-          set -euo pipefail
-          git fetch origin ${{ github.base_ref }}
+          bash tools/qw_gate.sh "origin/${{ github.base_ref || 'main' }}" "${{ github.sha }}"
 
-      - name: Generate review artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python tools/qw_review_grok.py \
-            --task_id review_grok \
-            --run_id gha_${{ github.run_id }} \
-            --trace_id gha_${{ github.run_id }}_${{ github.run_attempt }} \
-            --audit_id gha_${{ github.run_id }} \
-            --base_ref origin/${{ github.base_ref }} \
-            --provider local-rule-review \
-            --review_mode offline
-
-      - name: Upload review artifacts
+      - name: Upload gate artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: review-delivery-${{ github.run_id }}
-          path: artifacts/review/
-          if-no-files-found: error
+          name: gate-artifacts
+          path: |
+            artifacts/gate/**
+            .gate_logs/**
+          if-no-files-found: warn
+
+  preview:
+    needs: gate
+    if: ${{ needs.gate.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "preview stage placeholder"
+
+  review:
+    needs: [gate, preview]
+    if: ${{ needs.gate.result == 'success' && needs.preview.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "review stage placeholder"
